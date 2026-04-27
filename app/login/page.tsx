@@ -11,15 +11,24 @@ export default function LoginPage() {
     setLoading(true)
     setError('')
     const { createClient } = await import('@supabase/supabase-js')
-    const supabase = createClient(
+    const sb = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+      { auth: { persistSession: true, storageKey: 'sb-grenier-auth-token' } }
     )
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await sb.auth.signInWithPassword({ email, password })
     if (error) {
       setError('Courriel ou mot de passe incorrect.')
       setLoading(false)
       return
+    }
+    // Sauvegarder la session dans localStorage avant de rediriger
+    if (data.session) {
+      localStorage.setItem('sb-grenier-auth-token', JSON.stringify({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+        expires_at: data.session.expires_at
+      }))
     }
     window.location.href = '/dashboard'
   }
