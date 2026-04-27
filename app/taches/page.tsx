@@ -1,13 +1,16 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { createClient } from '@supabase/supabase-js'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-)
 
 const COLORS = ['#185FA5','#533AB7','#3B6D11','#854F0B','#A32D2D','#0F6E56','#9a8600','#633806']
+
+function getClient() {
+  const { createClient } = require('@supabase/supabase-js')
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+    { auth: { persistSession: true, storageKey: 'sb-grenier-auth-token' } }
+  )
+}
 
 export default function TachesPage() {
   const [tasks, setTasks] = useState<any[]>([])
@@ -21,61 +24,82 @@ export default function TachesPage() {
   const [catName, setCatName] = useState('')
   const [catColor, setCatColor] = useState(COLORS[0])
   const [userId, setUserId] = useState('')
+  const [session, setSession] = useState<any>(null)
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) { window.location.href = '/login'; return }
-      setUserId(data.user.id)
-      loadCategories(data.user.id)
-      loadTasks(data.user.id)
+    const sb = getClient()
+    sb.auth.getSession().then(({ data }: any) => {
+      if (!data.session) { window.location.href = '/login'; return }
+      setSession(data.session)
+      setUserId(data.session.user.id)
+      loadCategories(sb, data.session.user.id)
+      loadTasks(sb, data.session.user.id)
     })
   }, [])
 
-  async function loadCategories(uid: string) {
-    const { data } = await supabase.from('categories').select('*').or(`user_id.eq.${uid},is_global.eq.true`).order('name')
+  async function loadCategories(sb: any, uid: string) {
+    const { data, error } = await sb.from('categories').select('*').or(`user_id.eq.${uid},is_global.eq.true`).order('name')
+    if (error) console.error('categories error:', error)
     setCategories(data || [])
   }
 
-  async function loadTasks(uid: string) {
-    const { data } = await supabase.from('tasks').select('*, category:categories(name,color)').eq('user_id', uid).order('created_at', { ascending: false })
+  async function loadTasks(sb: any, uid: string) {
+    const { data, error } = await sb.from('tasks').select('*, category:categories(name,color)').eq('user_id', uid).order('created_at', { ascending: false })
+    if (error) console.error('tasks error:', error)
     setTasks(data || [])
   }
 
   async function addTask() {
-    if (!desc.trim()) return
-    await supabase.from('tasks').insert({ user_id: userId, description: desc, category_id: catId || null, estimated_duration: est || null, source: 'manual' })
+    if (!desc.trim() || !userId) return
+    const sb = getClient()
+    const { error } = await sb.from('tasks').insert({
+      user_id: userId,
+      description: desc,
+      category_id: catId || null,
+      estimated_duration: est || null,
+      source: 'manual'
+    })
+    if (error) { console.error('insert task error:', error); return }
     setDesc(''); setCatId(''); setEst(''); setShowModal(false)
-    loadTasks(userId)
+    loadTasks(sb, userId)
   }
 
   async function addCategory() {
-    if (!catName.trim()) return
-    await supabase.from('categories').insert({ user_id: userId, name: catName, color: catColor, is_global: false })
+    if (!catName.trim() || !userId) return
+    const sb = getClient()
+    const { error } = await sb.from('categories').insert({
+      user_id: userId,
+      name: catName,
+      color: catColor,
+      is_global: false
+    })
+    if (error) { console.error('insert category error:', error); return }
     setCatName(''); setCatColor(COLORS[0]); setShowCatModal(false)
-    loadCategories(userId)
+    loadCategories(sb, userId)
   }
 
   async function toggleDone(id: string, done: boolean) {
-    await supabase.from('tasks').update({ is_done: !done }).eq('id', id)
-    loadTasks(userId)
+    const sb = getClient()
+    await sb.from('tasks').update({ is_done: !done }).eq('id', id)
+    loadTasks(sb, userId)
   }
 
   async function deleteTask(id: string) {
-    await supabase.from('tasks').delete().eq('id', id)
-    loadTasks(userId)
+    const sb = getClient()
+    await sb.from('tasks').delete().eq('id', id)
+    loadTasks(sb, userId)
   }
 
   const filtered = filter === 'toutes' ? tasks : tasks.filter(t => t.category?.name === filter)
 
   return (
     <div style={{ display:'flex', minHeight:'100vh' }}>
-      {/* Sidebar */}
       <div style={{ width:'52px', background:'#111', display:'flex', flexDirection:'column', alignItems:'center', padding:'12px 0', gap:'6px', flexShrink:0 }}>
         {[
           { href:'/dashboard', icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="13" r="8" stroke="white" strokeWidth="1.5"/><path d="M12 9v4l2.5 2.5" stroke="white" strokeWidth="1.5" strokeLinecap="round"/></svg> },
-          { href:'/taches',   icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#111" strokeWidth="1.5"/><path d="M8 9h8M8 13h5" stroke="#111" strokeWidth="1.5" strokeLinecap="round"/></svg>, active:true },
-          { href:'/gmail',    icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M20 4H4C2.9 4 2 4.9 2 6v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2z" stroke="white" strokeWidth="1.5"/><path d="M2 6l10 7 10-7" stroke="white" strokeWidth="1.5"/></svg> },
-          { href:'/rapport',  icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 20V8l8-5 8 5v12H4z" stroke="white" strokeWidth="1.5" strokeLinejoin="round"/><path d="M9 20v-6h6v6" stroke="white" strokeWidth="1.5"/></svg> },
+          { href:'/taches', active:true, icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#111" strokeWidth="1.5"/><path d="M8 9h8M8 13h5" stroke="#111" strokeWidth="1.5" strokeLinecap="round"/></svg> },
+          { href:'/gmail', icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M20 4H4C2.9 4 2 4.9 2 6v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2z" stroke="white" strokeWidth="1.5"/><path d="M2 6l10 7 10-7" stroke="white" strokeWidth="1.5"/></svg> },
+          { href:'/rapport', icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 20V8l8-5 8 5v12H4z" stroke="white" strokeWidth="1.5" strokeLinejoin="round"/><path d="M9 20v-6h6v6" stroke="white" strokeWidth="1.5"/></svg> },
           { href:'/employes', icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="7" r="3" stroke="white" strokeWidth="1.5"/><path d="M3 17c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="white" strokeWidth="1.5" strokeLinecap="round"/></svg> },
         ].map(item => (
           <div key={item.href} onClick={() => window.location.href = item.href}
@@ -84,23 +108,21 @@ export default function TachesPage() {
           </div>
         ))}
         <div style={{ flex:1 }} />
-        <div onClick={() => supabase.auth.signOut().then(() => window.location.href = '/login')}
+        <div onClick={() => getClient().auth.signOut().then(() => window.location.href = '/login')}
           style={{ width:'30px', height:'30px', borderRadius:'50%', background:'#F2E000', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'11px', fontWeight:'500', color:'#111', cursor:'pointer' }}>
           ÉG
         </div>
       </div>
 
-      {/* Main */}
       <div style={{ flex:1, background:'#f5f4f0', padding:'1.25rem' }}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'1rem' }}>
           <h1 style={{ fontSize:'15px', fontWeight:'500' }}>Mes tâches</h1>
           <button onClick={() => setShowModal(true)}
-            style={{ background:'#F2E000', border:'none', borderRadius:'8px', padding:'7px 14px', fontSize:'13px', fontWeight:'500', cursor:'pointer', display:'flex', alignItems:'center', gap:'6px' }}>
+            style={{ background:'#F2E000', border:'none', borderRadius:'8px', padding:'7px 14px', fontSize:'13px', fontWeight:'500', cursor:'pointer' }}>
             + Nouvelle tâche
           </button>
         </div>
 
-        {/* Filtres */}
         <div style={{ display:'flex', gap:'6px', flexWrap:'wrap', marginBottom:'1rem' }}>
           <div onClick={() => setFilter('toutes')}
             style={{ padding:'5px 12px', borderRadius:'20px', border:'0.5px solid rgba(0,0,0,0.15)', background: filter==='toutes' ? '#111' : 'white', color: filter==='toutes' ? '#F2E000' : '#555', fontSize:'12px', cursor:'pointer' }}>
@@ -119,7 +141,6 @@ export default function TachesPage() {
           </div>
         </div>
 
-        {/* Liste des tâches */}
         <div style={{ display:'flex', flexDirection:'column', gap:'6px' }}>
           {filtered.length === 0 && <div style={{ textAlign:'center', fontSize:'13px', color:'#aaa', padding:'2rem 0' }}>Aucune tâche.</div>}
           {filtered.map(t => (
@@ -133,15 +154,16 @@ export default function TachesPage() {
                 <div style={{ display:'flex', gap:'8px', marginTop:'3px', alignItems:'center' }}>
                   {t.category && <span style={{ fontSize:'11px', color: t.category.color }}>{t.category.name}</span>}
                   {t.estimated_duration && <span style={{ fontSize:'11px', color:'#aaa' }}>⏱ {t.estimated_duration}</span>}
-                  <span style={{ fontSize:'10px', padding:'2px 6px', borderRadius:'10px', background: t.source==='gmail' ? '#FCEBEB' : '#f5f4f0', color: t.source==='gmail' ? '#A32D2D' : '#aaa' }}>{t.source === 'gmail' ? 'Gmail' : 'Manuel'}</span>
+                  <span style={{ fontSize:'10px', padding:'2px 6px', borderRadius:'10px', background: t.source==='gmail' ? '#FCEBEB' : '#f5f4f0', color: t.source==='gmail' ? '#A32D2D' : '#aaa' }}>
+                    {t.source === 'gmail' ? 'Gmail' : 'Manuel'}
+                  </span>
                 </div>
               </div>
-              <div onClick={() => deleteTask(t.id)} style={{ cursor:'pointer', color:'#ccc', fontSize:'16px', padding:'0 4px' }}>×</div>
+              <div onClick={() => deleteTask(t.id)} style={{ cursor:'pointer', color:'#ccc', fontSize:'18px', padding:'0 4px' }}>×</div>
             </div>
           ))}
         </div>
 
-        {/* Modal nouvelle tâche */}
         {showModal && (
           <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50 }}>
             <div style={{ background:'white', borderRadius:'16px', padding:'1.5rem', width:'320px' }}>
@@ -174,7 +196,6 @@ export default function TachesPage() {
           </div>
         )}
 
-        {/* Modal nouvelle catégorie */}
         {showCatModal && (
           <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50 }}>
             <div style={{ background:'white', borderRadius:'16px', padding:'1.5rem', width:'300px' }}>
