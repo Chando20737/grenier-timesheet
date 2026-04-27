@@ -16,14 +16,31 @@ export default function TachesPage() {
   const [catName, setCatName] = useState('')
   const [catColor, setCatColor] = useState(COLORS[0])
   const [userId, setUserId] = useState('')
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) { window.location.href = '/login'; return }
-      setUserId(data.session.user.id)
-      loadCategories(data.session.user.id)
-      loadTasks(data.session.user.id)
-    })
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getSession()
+      if (data.session) {
+        setUserId(data.session.user.id)
+        loadCategories(data.session.user.id)
+        loadTasks(data.session.user.id)
+        setLoading(false)
+        return
+      }
+      setTimeout(async () => {
+        const { data: data2 } = await supabase.auth.getSession()
+        if (data2.session) {
+          setUserId(data2.session.user.id)
+          loadCategories(data2.session.user.id)
+          loadTasks(data2.session.user.id)
+          setLoading(false)
+        } else {
+          window.location.href = '/login'
+        }
+      }, 1000)
+    }
+    checkSession()
   }, [])
 
   async function loadCategories(uid: string) {
@@ -76,6 +93,12 @@ export default function TachesPage() {
   }
 
   const filtered = filter === 'toutes' ? tasks : tasks.filter(t => t.category?.name === filter)
+
+  if (loading) return (
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#f5f4f0' }}>
+      <div style={{ fontSize:'13px', color:'#aaa' }}>Chargement...</div>
+    </div>
+  )
 
   return (
     <div style={{ display:'flex', minHeight:'100vh' }}>
