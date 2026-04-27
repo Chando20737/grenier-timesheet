@@ -1,16 +1,8 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { supabase } from '@/lib/supabase'
 
 const COLORS = ['#185FA5','#533AB7','#3B6D11','#854F0B','#A32D2D','#0F6E56','#9a8600','#633806']
-
-function getClient() {
-  const { createClient } = require('@supabase/supabase-js')
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
-    { auth: { persistSession: true, storageKey: 'sb-grenier-auth-token' } }
-  )
-}
 
 export default function TachesPage() {
   const [tasks, setTasks] = useState<any[]>([])
@@ -24,35 +16,31 @@ export default function TachesPage() {
   const [catName, setCatName] = useState('')
   const [catColor, setCatColor] = useState(COLORS[0])
   const [userId, setUserId] = useState('')
-  const [session, setSession] = useState<any>(null)
 
   useEffect(() => {
-    const sb = getClient()
-    sb.auth.getSession().then(({ data }: any) => {
+    supabase.auth.getSession().then(({ data }) => {
       if (!data.session) { window.location.href = '/login'; return }
-      setSession(data.session)
       setUserId(data.session.user.id)
-      loadCategories(sb, data.session.user.id)
-      loadTasks(sb, data.session.user.id)
+      loadCategories(data.session.user.id)
+      loadTasks(data.session.user.id)
     })
   }, [])
 
-  async function loadCategories(sb: any, uid: string) {
-    const { data, error } = await sb.from('categories').select('*').or(`user_id.eq.${uid},is_global.eq.true`).order('name')
+  async function loadCategories(uid: string) {
+    const { data, error } = await supabase.from('categories').select('*').or(`user_id.eq.${uid},is_global.eq.true`).order('name')
     if (error) console.error('categories error:', error)
     setCategories(data || [])
   }
 
-  async function loadTasks(sb: any, uid: string) {
-    const { data, error } = await sb.from('tasks').select('*, category:categories(name,color)').eq('user_id', uid).order('created_at', { ascending: false })
+  async function loadTasks(uid: string) {
+    const { data, error } = await supabase.from('tasks').select('*, category:categories(name,color)').eq('user_id', uid).order('created_at', { ascending: false })
     if (error) console.error('tasks error:', error)
     setTasks(data || [])
   }
 
   async function addTask() {
     if (!desc.trim() || !userId) return
-    const sb = getClient()
-    const { error } = await sb.from('tasks').insert({
+    const { error } = await supabase.from('tasks').insert({
       user_id: userId,
       description: desc,
       category_id: catId || null,
@@ -61,13 +49,12 @@ export default function TachesPage() {
     })
     if (error) { console.error('insert task error:', error); return }
     setDesc(''); setCatId(''); setEst(''); setShowModal(false)
-    loadTasks(sb, userId)
+    loadTasks(userId)
   }
 
   async function addCategory() {
     if (!catName.trim() || !userId) return
-    const sb = getClient()
-    const { error } = await sb.from('categories').insert({
+    const { error } = await supabase.from('categories').insert({
       user_id: userId,
       name: catName,
       color: catColor,
@@ -75,19 +62,17 @@ export default function TachesPage() {
     })
     if (error) { console.error('insert category error:', error); return }
     setCatName(''); setCatColor(COLORS[0]); setShowCatModal(false)
-    loadCategories(sb, userId)
+    loadCategories(userId)
   }
 
   async function toggleDone(id: string, done: boolean) {
-    const sb = getClient()
-    await sb.from('tasks').update({ is_done: !done }).eq('id', id)
-    loadTasks(sb, userId)
+    await supabase.from('tasks').update({ is_done: !done }).eq('id', id)
+    loadTasks(userId)
   }
 
   async function deleteTask(id: string) {
-    const sb = getClient()
-    await sb.from('tasks').delete().eq('id', id)
-    loadTasks(sb, userId)
+    await supabase.from('tasks').delete().eq('id', id)
+    loadTasks(userId)
   }
 
   const filtered = filter === 'toutes' ? tasks : tasks.filter(t => t.category?.name === filter)
@@ -108,7 +93,7 @@ export default function TachesPage() {
           </div>
         ))}
         <div style={{ flex:1 }} />
-        <div onClick={() => getClient().auth.signOut().then(() => window.location.href = '/login')}
+        <div onClick={() => supabase.auth.signOut().then(() => window.location.href = '/login')}
           style={{ width:'30px', height:'30px', borderRadius:'50%', background:'#F2E000', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'11px', fontWeight:'500', color:'#111', cursor:'pointer' }}>
           ÉG
         </div>
