@@ -1,0 +1,105 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --yellow: #F2E000;
+  --yellow-dark: #d4c400;
+  --black: #111111;
+  --sidebar-w: 52px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'DM Sans', -apple-system, sans-serif;
+  background: #f5f4f0;
+  color: #111;
+}
+
+input, select, textarea, button {
+  font-family: inherit;
+}
+
+.sidebar {
+  width: var(--sidebar-w);
+  background: var(--black);
+  height: 100vh;
+  position: fixed;
+  left: 0; top: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0;
+  gap: 4px;
+  z-index: 50;
+}
+
+.main-content {
+  margin-left: var(--sidebar-w);
+  min-height: 100vh;
+  padding: 1.5rem;
+}
+
+.card {
+  background: white;
+  border: 0.5px solid rgba(0,0,0,0.1);
+  border-radius: 12px;
+}
+
+.btn-primary {
+  background: var(--yellow);
+  color: var(--black);
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s;
+}
+.btn-primary:hover { background: var(--yellow-dark); }
+
+.btn-ghost {
+  background: none;
+  border: 0.5px solid rgba(0,0,0,0.15);
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 13px;
+  color: #555;
+  cursor: pointer;
+}
+.btn-ghost:hover { background: #f5f4f0; }
+
+.form-input {
+  width: 100%;
+  padding: 9px 11px;
+  font-size: 13px;
+  border: 0.5px solid rgba(0,0,0,0.15);
+  border-radius: 8px;
+  background: #f9f9f7;
+  color: #111;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.form-input:focus { border-color: var(--yellow-dark); box-shadow: 0 0 0 3px rgba(212,196,0,0.15); }
+
+.label {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: #777;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 5px;
+}
+
+.badge {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 7px;
+  border-radius: 10px;
+}
