@@ -18,7 +18,6 @@ export default function LoginPage() {
       setLoading(false)
       return
     }
-    console.log('session after login:', data.session)
     window.location.replace('/taches')
   }
 
@@ -48,8 +47,7 @@ export default function LoginPage() {
               onChange={e => setPassword(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && login()}
               style={{ width:'100%', padding:'9px 38px 9px 11px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', outline:'none' }} />
-            <div
-              onClick={() => setShowPw(!showPw)}
+            <div onClick={() => setShowPw(!showPw)}
               style={{ position:'absolute', right:'10px', top:'50%', transform:'translateY(-50%)', cursor:'pointer', color:'#aaa', fontSize:'16px', userSelect:'none' }}>
               {showPw ? '🙈' : '👁'}
             </div>
