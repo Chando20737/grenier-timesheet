@@ -77,6 +77,10 @@ export default function TachesPage() {
     <div style={{ display:'flex', minHeight:'100vh' }}>
       {/* Sidebar */}
       <div style={{ width:'52px', background:'#111', display:'flex', flexDirection:'column', alignItems:'center', padding:'12px 0', gap:'6px', flexShrink:0 }}>
+        {/* Logo */}
+        <div style={{ width:'36px', height:'36px', marginBottom:'10px', cursor:'pointer' }} onClick={() => window.location.href = '/dashboard'}>
+          <img src="/Grenier_Symbole_RGB.png" alt="Grenier" style={{ width:'100%', height:'100%', objectFit:'contain' }} />
+        </div>
         {[
           { href:'/dashboard', icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="13" r="8" stroke="white" strokeWidth="1.5"/><path d="M12 9v4l2.5 2.5" stroke="white" strokeWidth="1.5" strokeLinecap="round"/></svg> },
           { href:'/taches', active:true, icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#111" strokeWidth="1.5"/><path d="M8 9h8M8 13h5" stroke="#111" strokeWidth="1.5" strokeLinecap="round"/></svg> },
@@ -98,7 +102,6 @@ export default function TachesPage() {
 
       {/* Main */}
       <div style={{ flex:1, display:'flex', flexDirection:'column', minHeight:'100vh' }}>
-
         {/* Barre de titre noire */}
         <div style={{ background:'#111', padding:'14px 1.25rem', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
           <h1 style={{ fontSize:'15px', fontWeight:'500', color:'#F2E000' }}>Mes tâches</h1>
