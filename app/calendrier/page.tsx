@@ -18,6 +18,14 @@ const navItems = [
 
 function snap5(m: number) { return Math.round(m/5)*5 }
 function minToStr(m: number) { return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0') }
+function parseDuration(s: string | null): number {
+  if (!s) return 60
+  const hm = s.match(/(\d+)h\s*(\d+)?/)
+  if (hm) return parseInt(hm[1])*60 + parseInt(hm[2]||'0')
+  const mins = s.match(/(\d+)/)
+  if (mins) return parseInt(mins[1])
+  return 60
+}
 
 export default function CalendrierPage() {
   const [user, setUser] = useState<any>(null)
@@ -65,10 +73,9 @@ export default function CalendrierPage() {
       id: t.id,
       title: t.description,
       timeMin: new Date(t.scheduled_at).getHours()*60 + new Date(t.scheduled_at).getMinutes(),
-      dur: parseInt(t.estimated_duration || '60'),
+      dur: parseDuration(t.estimated_duration),
       color: t.category?.color || '#3B6D11',
       type: t.source === 'calendar' ? 'agenda' : 'manual',
-      raw: t
     })))
     setUnplanned(withoutSchedule)
   }
@@ -124,12 +131,12 @@ export default function CalendrierPage() {
     e.preventDefault()
     const rect = areaRef.current!.getBoundingClientRect()
     const y = e.clientY - rect.top
-    const dur = dragTask.current?.dur || placed[dragCalIdx.current!]?.dur || 60
+    const dur = dragTask.current ? parseDuration(dragTask.current.estimated_duration) : (placed[dragCalIdx.current!]?.dur || 60)
     const offsetY = dragCalIdx.current !== null ? dragCalOffset.current : 0
     const min = getMinFromY(y, offsetY)
     setTooltip({ x: e.clientX+12, y: e.clientY-10, text: minToStr(min)+' – '+minToStr(min+dur) })
     const ghost = document.getElementById('cal-ghost')
-    if (ghost) { ghost.style.top=(min-8*60)*PPM+'px'; ghost.style.height=dur*PPM+'px'; ghost.style.display='block' }
+    if (ghost) { ghost.style.top=(min-8*60)*PPM+'px'; ghost.style.height=Math.max(dur*PPM,10)+'px'; ghost.style.display='block' }
   }
 
   function onAreaDragLeave(e: React.DragEvent) {
@@ -151,7 +158,7 @@ export default function CalendrierPage() {
     const min = getMinFromY(y, offsetY)
     if (dragTask.current) {
       const task = dragTask.current
-      const dur = parseInt(task.estimated_duration || '60')
+      const dur = parseDuration(task.estimated_duration)
       await saveScheduled(task.id, min, dur)
       dragTask.current = null
       loadTasks(user.id)
@@ -167,7 +174,7 @@ export default function CalendrierPage() {
     const onMove = (ev: MouseEvent) => {
       if (!resizing.current) return
       const dy = ev.clientY - resizing.current.startY
-      const newDur = Math.max(15, snap5(resizing.current.origDur + dy/PPM))
+      const newDur = Math.max(5, snap5(resizing.current.origDur + dy/PPM))
       setPlaced(prev => prev.map((t,i) => i===resizing.current!.idx ? {...t, dur:newDur} : t))
       setTooltip({ x: ev.clientX+12, y: ev.clientY-10, text: 'Durée : '+newDur+' min' })
     }
@@ -230,7 +237,7 @@ export default function CalendrierPage() {
 
       {/* Main */}
       <div style={{ flex:1, display:'flex', flexDirection:'column', minHeight:'100vh', minWidth:0 }}>
-        <div style={{ background:'#111', padding:'10px 1rem', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
+        <div style={{ background:'#111', padding:'10px 1rem', display:'flex', alignItems:'center', flexShrink:0 }}>
           <h1 style={{ fontSize:'15px', fontWeight:'500', color:'#F2E000' }}>Mon calendrier</h1>
         </div>
 
@@ -305,7 +312,7 @@ export default function CalendrierPage() {
 
                 {placed.map((t, idx) => {
                   const top = (t.timeMin - 8*60) * PPM
-                  const height = Math.max(t.dur * PPM, 36)
+                  const height = Math.max(t.dur * PPM, 20)
                   const colors = t.type === 'agenda'
                     ? { bg:'#E6F1FB', text:'#0C447C', border:'#185FA5' }
                     : { bg:'#EAF3DE', text:'#27500A', border: t.color || '#3B6D11' }
@@ -315,14 +322,12 @@ export default function CalendrierPage() {
                       style={{ position:'absolute', left:'4px', right:'4px', top:`${top}px`, height:`${height}px`, borderRadius:'5px', padding:'3px 24px 14px 6px', overflow:'hidden', zIndex:2, cursor:'grab', background:colors.bg, color:colors.text, borderLeft:`3px solid ${colors.border}` }}>
                       <div style={{ fontSize:'11px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}</div>
                       <div style={{ fontSize:'10px', opacity:0.7, marginTop:'1px' }}>{minToStr(t.timeMin)} – {minToStr(t.timeMin+t.dur)}</div>
-                      {/* Bouton retirer */}
                       <div onClick={e => { e.stopPropagation(); removeFromCalendar(t.id) }}
-                        style={{ position:'absolute', top:'3px', right:'4px', width:'16px', height:'16px', borderRadius:'50%', background:'rgba(0,0,0,0.12)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'12px', lineHeight:1, color:colors.text, opacity:0.6 }}
+                        style={{ position:'absolute', top:'3px', right:'4px', width:'16px', height:'16px', borderRadius:'50%', background:'rgba(0,0,0,0.12)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'12px', lineHeight:'1', color:colors.text, opacity:0.6 }}
                         onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity='1'}
                         onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity='0.6'}>
                         ×
                       </div>
-                      {/* Resize handle */}
                       <div onMouseDown={e => startResize(e, idx)}
                         style={{ position:'absolute', bottom:0, left:0, right:0, height:'10px', cursor:'ns-resize', display:'flex', alignItems:'center', justifyContent:'center' }}>
                         <div style={{ width:'24px', height:'3px', borderRadius:'2px', background:'currentColor', opacity:0.35 }} />
@@ -334,7 +339,7 @@ export default function CalendrierPage() {
             </div>
           </div>
 
-          {/* Tâches à planifier — colonne élargie */}
+          {/* Tâches à planifier */}
           <div style={{ width:'380px', flexShrink:0, background:'#f9f9f7', display:'flex', flexDirection:'column', overflowY:'auto' }}>
             <div style={{ padding:'10px 12px', borderBottom:'0.5px solid rgba(0,0,0,0.08)', fontSize:'10px', fontWeight:'500', color:'#777', textTransform:'uppercase', letterSpacing:'0.5px', background:'white' }}>
               Tâches à planifier
