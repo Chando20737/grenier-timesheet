@@ -22,15 +22,16 @@ export default function LoginPage() {
       setLoading(false)
       return
     }
-    // Sauvegarder la session dans localStorage avant de rediriger
     if (data.session) {
       localStorage.setItem('sb-grenier-auth-token', JSON.stringify({
         access_token: data.session.access_token,
         refresh_token: data.session.refresh_token,
-        expires_at: data.session.expires_at
+        expires_at: data.session.expires_at,
+        token_type: data.session.token_type,
+        user: data.session.user
       }))
     }
-    window.location.href = '/dashboard'
+    window.location.replace('/taches')
   }
 
   return (
