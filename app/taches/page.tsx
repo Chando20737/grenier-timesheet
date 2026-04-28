@@ -19,19 +19,17 @@ export default function TachesPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session) {
-        setUserId(session.user.id)
-        loadCategories(session.user.id)
-        loadTasks(session.user.id)
+    supabase.auth.getUser().then(({ data, error }) => {
+      console.log('user:', data, 'error:', error)
+      if (data?.user) {
+        setUserId(data.user.id)
+        loadCategories(data.user.id)
+        loadTasks(data.user.id)
         setLoading(false)
-      } else if (event === 'SIGNED_OUT') {
-        window.location.href = '/login'
-      } else if (event === 'INITIAL_SESSION' && !session) {
+      } else {
         window.location.href = '/login'
       }
     })
-    return () => subscription.unsubscribe()
   }, [])
 
   async function loadCategories(uid: string) {
