@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPw, setShowPw] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -39,10 +40,20 @@ export default function LoginPage() {
         </div>
         <div style={{ marginBottom:'16px' }}>
           <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'5px' }}>Mot de passe</label>
-          <input type="password" placeholder="••••••••" value={password}
-            onChange={e => setPassword(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && login()}
-            style={{ width:'100%', padding:'9px 11px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', outline:'none' }} />
+          <div style={{ position:'relative' }}>
+            <input
+              type={showPw ? 'text' : 'password'}
+              placeholder="••••••••"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && login()}
+              style={{ width:'100%', padding:'9px 38px 9px 11px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', outline:'none' }} />
+            <div
+              onClick={() => setShowPw(!showPw)}
+              style={{ position:'absolute', right:'10px', top:'50%', transform:'translateY(-50%)', cursor:'pointer', color:'#aaa', fontSize:'16px', userSelect:'none' }}>
+              {showPw ? '🙈' : '👁'}
+            </div>
+          </div>
         </div>
         <button onClick={login} disabled={loading}
           style={{ width:'100%', padding:'10px', background:'#F2E000', border:'none', borderRadius:'8px', fontSize:'13px', fontWeight:'500', cursor:'pointer' }}>
