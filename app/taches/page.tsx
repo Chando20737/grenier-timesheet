@@ -19,6 +19,7 @@ export default function TachesPage() {
   const [filter, setFilter] = useState('toutes')
   const [showModal, setShowModal] = useState(false)
   const [showCatModal, setShowCatModal] = useState(false)
+  const [editTask, setEditTask] = useState<any>(null)
   const [desc, setDesc] = useState('')
   const [catId, setCatId] = useState('')
   const [est, setEst] = useState('')
@@ -51,10 +52,37 @@ export default function TachesPage() {
     setTasks(data || [])
   }
 
-  async function addTask() {
+  function openNew() {
+    setEditTask(null)
+    setDesc(''); setCatId(''); setEst('')
+    setShowModal(true)
+  }
+
+  function openEdit(t: any) {
+    setEditTask(t)
+    setDesc(t.description)
+    setCatId(t.category_id || '')
+    setEst(t.estimated_duration || '')
+    setShowModal(true)
+  }
+
+  async function saveTask() {
     if (!desc.trim() || !userId) return
-    await supabase.from('tasks').insert({ user_id: userId, description: desc, category_id: catId || null, estimated_duration: est || null, source: 'manual' })
-    setDesc(''); setCatId(''); setEst(''); setShowModal(false)
+    if (editTask) {
+      await supabase.from('tasks').update({
+        description: desc,
+        category_id: catId || null,
+        estimated_duration: est || null,
+      }).eq('id', editTask.id)
+    } else {
+      await supabase.from('tasks').insert({
+        user_id: userId, description: desc,
+        category_id: catId || null,
+        estimated_duration: est || null,
+        source: 'manual'
+      })
+    }
+    setShowModal(false); setDesc(''); setCatId(''); setEst(''); setEditTask(null)
     loadTasks(userId)
   }
 
@@ -85,6 +113,7 @@ export default function TachesPage() {
 
   return (
     <div style={{ display:'flex', minHeight:'100vh' }}>
+      {/* Sidebar */}
       <div style={{ width:'200px', background:'#111', display:'flex', flexDirection:'column', padding:'16px 0', flexShrink:0 }}>
         <div style={{ display:'flex', alignItems:'center', gap:'10px', padding:'0 16px', marginBottom:'24px', cursor:'pointer' }} onClick={() => window.location.href='/dashboard'}>
           <img src="/Grenier_Symbole_RGB.png" alt="Grenier" style={{ width:'32px', height:'32px', objectFit:'contain' }} />
@@ -113,16 +142,18 @@ export default function TachesPage() {
         </div>
       </div>
 
+      {/* Main */}
       <div style={{ flex:1, display:'flex', flexDirection:'column', minHeight:'100vh' }}>
         <div style={{ background:'#111', padding:'14px 1.25rem', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
           <h1 style={{ fontSize:'15px', fontWeight:'500', color:'#F2E000' }}>Mes tâches</h1>
-          <button onClick={() => setShowModal(true)}
+          <button onClick={openNew}
             style={{ background:'#F2E000', border:'none', borderRadius:'8px', padding:'7px 14px', fontSize:'13px', fontWeight:'500', cursor:'pointer', color:'#111' }}>
             + Nouvelle tâche
           </button>
         </div>
 
         <div style={{ flex:1, background:'#f5f4f0', padding:'1.25rem' }}>
+          {/* Filtres */}
           <div style={{ display:'flex', gap:'6px', flexWrap:'wrap', marginBottom:'1rem' }}>
             <div onClick={() => setFilter('toutes')}
               style={{ padding:'5px 12px', borderRadius:'20px', border:'0.5px solid rgba(0,0,0,0.15)', background: filter==='toutes' ? '#111' : 'white', color: filter==='toutes' ? '#F2E000' : '#555', fontSize:'12px', cursor:'pointer' }}>
@@ -141,14 +172,17 @@ export default function TachesPage() {
             </div>
           </div>
 
+          {/* Liste des tâches */}
           <div style={{ display:'flex', flexDirection:'column', gap:'6px' }}>
             {filtered.length === 0 && <div style={{ textAlign:'center', fontSize:'13px', color:'#aaa', padding:'2rem 0' }}>Aucune tâche.</div>}
             {filtered.map(t => (
               <div key={t.id} style={{ background:'white', border:'0.5px solid rgba(0,0,0,0.1)', borderRadius:'10px', padding:'10px 14px', display:'flex', alignItems:'center', gap:'12px' }}>
+                {/* Checkbox */}
                 <div onClick={() => toggleDone(t.id, t.is_done)}
                   style={{ width:'18px', height:'18px', borderRadius:'50%', border: t.is_done ? 'none' : '1.5px solid rgba(0,0,0,0.2)', background: t.is_done ? '#3B6D11' : 'transparent', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                   {t.is_done && <svg width="10" height="10" viewBox="0 0 12 12"><polyline points="2,6 5,9 10,3" stroke="white" strokeWidth="1.8" fill="none" strokeLinecap="round"/></svg>}
                 </div>
+                {/* Infos */}
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontSize:'13px', textDecoration: t.is_done ? 'line-through' : 'none', color: t.is_done ? '#aaa' : '#111' }}>{t.description}</div>
                   <div style={{ display:'flex', gap:'8px', marginTop:'3px', alignItems:'center' }}>
@@ -159,16 +193,35 @@ export default function TachesPage() {
                     </span>
                   </div>
                 </div>
-                <div onClick={() => deleteTask(t.id)} style={{ cursor:'pointer', color:'#ccc', fontSize:'18px', padding:'0 4px' }}>×</div>
+                {/* Actions */}
+                <div style={{ display:'flex', gap:'6px', flexShrink:0 }}>
+                  {/* Modifier */}
+                  <div onClick={() => openEdit(t)} title="Modifier"
+                    style={{ width:'28px', height:'28px', borderRadius:'50%', background:'#f5f4f0', border:'0.5px solid rgba(0,0,0,0.1)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background='#FEFDE6'}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background='#f5f4f0'}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="#555" strokeWidth="1.5" strokeLinecap="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="#555" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                  </div>
+                  {/* Supprimer */}
+                  <div onClick={() => deleteTask(t.id)} title="Supprimer"
+                    style={{ width:'28px', height:'28px', borderRadius:'50%', background:'#f5f4f0', border:'0.5px solid rgba(0,0,0,0.1)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background='#FCEBEB'}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background='#f5f4f0'}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M6 18L18 6" stroke="#A32D2D" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
         </div>
 
+        {/* Modal nouvelle tâche / modification */}
         {showModal && (
           <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50 }}>
-            <div style={{ background:'white', borderRadius:'16px', padding:'1.5rem', width:'320px' }}>
-              <div style={{ fontSize:'14px', fontWeight:'500', marginBottom:'1rem' }}>Nouvelle tâche</div>
+            <div style={{ background:'white', borderRadius:'16px', padding:'1.5rem', width:'340px' }} onClick={e => e.stopPropagation()}>
+              <div style={{ fontSize:'14px', fontWeight:'500', marginBottom:'1rem' }}>
+                {editTask ? 'Modifier la tâche' : 'Nouvelle tâche'}
+              </div>
               <div style={{ marginBottom:'10px' }}>
                 <label style={{ fontSize:'11px', color:'#777', display:'block', marginBottom:'4px' }}>Description</label>
                 <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="Ex: Préparer la réunion"
@@ -190,13 +243,18 @@ export default function TachesPage() {
                 </div>
               </div>
               <div style={{ display:'flex', gap:'8px', justifyContent:'flex-end' }}>
-                <button onClick={() => setShowModal(false)} style={{ padding:'7px 14px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', background:'none', cursor:'pointer' }}>Annuler</button>
-                <button onClick={addTask} style={{ padding:'7px 16px', fontSize:'13px', background:'#F2E000', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>Ajouter</button>
+                <button onClick={() => { setShowModal(false); setEditTask(null) }}
+                  style={{ padding:'7px 14px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', background:'none', cursor:'pointer' }}>Annuler</button>
+                <button onClick={saveTask}
+                  style={{ padding:'7px 16px', fontSize:'13px', background:'#F2E000', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>
+                  {editTask ? 'Enregistrer' : 'Ajouter'}
+                </button>
               </div>
             </div>
           </div>
         )}
 
+        {/* Modal nouvelle catégorie */}
         {showCatModal && (
           <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50 }}>
             <div style={{ background:'white', borderRadius:'16px', padding:'1.5rem', width:'300px' }}>
@@ -217,8 +275,10 @@ export default function TachesPage() {
                 </div>
               </div>
               <div style={{ display:'flex', gap:'8px', justifyContent:'flex-end' }}>
-                <button onClick={() => setShowCatModal(false)} style={{ padding:'7px 14px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', background:'none', cursor:'pointer' }}>Annuler</button>
-                <button onClick={addCategory} style={{ padding:'7px 16px', fontSize:'13px', background:'#F2E000', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>Créer</button>
+                <button onClick={() => setShowCatModal(false)}
+                  style={{ padding:'7px 14px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', background:'none', cursor:'pointer' }}>Annuler</button>
+                <button onClick={addCategory}
+                  style={{ padding:'7px 16px', fontSize:'13px', background:'#F2E000', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>Créer</button>
               </div>
             </div>
           </div>
