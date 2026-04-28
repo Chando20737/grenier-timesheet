@@ -38,6 +38,8 @@ export default function CalendrierPage() {
   })
   const [unplanned, setUnplanned] = useState<any[]>([])
   const [placed, setPlaced] = useState<any[]>([])
+  const [googleEvents, setGoogleEvents] = useState<any[]>([])
+  const [googleConnected, setGoogleConnected] = useState(false)
   const [tooltip, setTooltip] = useState<{x:number,y:number,text:string}|null>(null)
   const areaRef = useRef<HTMLDivElement>(null)
   const dragTask = useRef<any>(null)
@@ -52,10 +54,21 @@ export default function CalendrierPage() {
       setIsAdmin(data.user.email === 'eric@grenier.qc.ca')
       setLoading(false)
       loadTasks(data.user.id)
+      checkGoogleConnection(data.user.id)
     })
+    // Vérifier si Google vient d'être connecté
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('google') === 'connected') {
+      window.history.replaceState({}, '', '/calendrier')
+    }
   }, [])
 
-  useEffect(() => { if (user) loadTasks(user.id) }, [user, weekOffset, selectedDay])
+  useEffect(() => { if (user) { loadTasks(user.id); loadGoogleEvents(user.id) } }, [user, weekOffset, selectedDay])
+
+  async function checkGoogleConnection(uid: string) {
+    const { data } = await supabase.from('users').select('google_access_token').eq('id', uid).single()
+    setGoogleConnected(!!data?.google_access_token)
+  }
 
   async function loadTasks(uid: string) {
     const { data } = await supabase.from('tasks')
@@ -75,9 +88,44 @@ export default function CalendrierPage() {
       timeMin: new Date(t.scheduled_at).getHours()*60 + new Date(t.scheduled_at).getMinutes(),
       dur: parseDuration(t.estimated_duration),
       color: t.category?.color || '#3B6D11',
-      type: t.source === 'calendar' ? 'agenda' : 'manual',
+      type: 'manual',
     })))
     setUnplanned(withoutSchedule)
+  }
+
+  async function loadGoogleEvents(uid: string) {
+    const monday = getMonday()
+    const d = new Date(monday); d.setDate(monday.getDate() + selectedDay)
+    const dateStr = d.toISOString().split('T')[0]
+    try {
+      const res = await fetch(`/api/calendar/sync?userId=${uid}&date=${dateStr}`)
+      if (res.status === 401) { setGoogleConnected(false); return }
+      const data = await res.json()
+      if (data.events) {
+        setGoogleConnected(true)
+        setGoogleEvents(data.events.filter((e: any) => !e.allDay).map((e: any) => {
+          const start = new Date(e.start)
+          const end = new Date(e.end)
+          const timeMin = start.getHours()*60 + start.getMinutes()
+          const dur = Math.round((end.getTime() - start.getTime()) / 60000)
+          return { id: e.id, title: e.title, timeMin, dur, type: 'agenda' }
+        }))
+      }
+    } catch {}
+  }
+
+  function connectGoogle() {
+    if (!user) return
+    const params = new URLSearchParams({
+      client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '',
+      redirect_uri: `${window.location.origin}/api/auth/callback/google`,
+      response_type: 'code',
+      scope: 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly',
+      access_type: 'offline',
+      prompt: 'consent',
+      state: user.id,
+    })
+    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`
   }
 
   function getMonday() {
@@ -115,16 +163,13 @@ export default function CalendrierPage() {
   }
 
   function onTaskDragStart(e: React.DragEvent, task: any) {
-    dragTask.current = task
-    dragCalIdx.current = null
+    dragTask.current = task; dragCalIdx.current = null
     e.dataTransfer.effectAllowed = 'move'
   }
 
   function onCalDragStart(e: React.DragEvent, idx: number) {
-    dragCalIdx.current = idx
-    dragCalOffset.current = e.nativeEvent.offsetY
-    dragTask.current = null
-    e.dataTransfer.effectAllowed = 'move'
+    dragCalIdx.current = idx; dragCalOffset.current = e.nativeEvent.offsetY
+    dragTask.current = null; e.dataTransfer.effectAllowed = 'move'
   }
 
   function onAreaDragOver(e: React.DragEvent) {
@@ -160,8 +205,7 @@ export default function CalendrierPage() {
       const task = dragTask.current
       const dur = parseDuration(task.estimated_duration)
       await saveScheduled(task.id, min, dur)
-      dragTask.current = null
-      loadTasks(user.id)
+      dragTask.current = null; loadTasks(user.id)
     } else if (dragCalIdx.current !== null) {
       const t = placed[dragCalIdx.current]
       if (t) { await saveScheduled(t.id, min, t.dur); dragCalIdx.current = null; loadTasks(user.id) }
@@ -185,8 +229,7 @@ export default function CalendrierPage() {
       if (resizing.current) {
         const t = placed[resizing.current.idx]
         if (t) await saveScheduled(t.id, t.timeMin, t.dur)
-        resizing.current = null
-        loadTasks(user.id)
+        resizing.current = null; loadTasks(user.id)
       }
     }
     document.addEventListener('mousemove', onMove)
@@ -197,6 +240,7 @@ export default function CalendrierPage() {
   const friday = new Date(monday); friday.setDate(monday.getDate()+4)
   const todayStr = new Date().toISOString().split('T')[0]
   const initials = user?.email?.split('@')[0].slice(0,2).toUpperCase() || 'ÉG'
+  const allCalEvents = [...placed, ...googleEvents]
 
   if (loading) return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#f5f4f0' }}>
@@ -237,8 +281,22 @@ export default function CalendrierPage() {
 
       {/* Main */}
       <div style={{ flex:1, display:'flex', flexDirection:'column', minHeight:'100vh', minWidth:0 }}>
-        <div style={{ background:'#111', padding:'10px 1rem', display:'flex', alignItems:'center', flexShrink:0 }}>
+        {/* Topbar */}
+        <div style={{ background:'#111', padding:'10px 1rem', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
           <h1 style={{ fontSize:'15px', fontWeight:'500', color:'#F2E000' }}>Mon calendrier</h1>
+          {!googleConnected && (
+            <button onClick={connectGoogle}
+              style={{ background:'white', border:'none', borderRadius:'8px', padding:'6px 12px', fontSize:'12px', fontWeight:'500', cursor:'pointer', color:'#111', display:'flex', alignItems:'center', gap:'6px' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+              Connecter Google Agenda
+            </button>
+          )}
+          {googleConnected && (
+            <div style={{ display:'flex', alignItems:'center', gap:'6px', fontSize:'12px', color:'rgba(255,255,255,0.5)' }}>
+              <div style={{ width:'7px', height:'7px', borderRadius:'50%', background:'#34A853' }} />
+              Google Agenda connecté
+            </div>
+          )}
         </div>
 
         {/* Day tabs */}
@@ -310,12 +368,24 @@ export default function CalendrierPage() {
                 ))}
                 <div id="cal-ghost" style={{ display:'none', position:'absolute', left:'4px', right:'4px', background:'rgba(242,224,0,0.25)', border:'1.5px dashed #D4B800', borderRadius:'5px', pointerEvents:'none', zIndex:3 }} />
 
+                {/* Événements Google Agenda */}
+                {googleEvents.map((t, idx) => {
+                  const top = (t.timeMin - 8*60) * PPM
+                  const height = Math.max(t.dur * PPM, 20)
+                  return (
+                    <div key={t.id || idx}
+                      style={{ position:'absolute', left:'4px', right:'4px', top:`${top}px`, height:`${height}px`, borderRadius:'5px', padding:'3px 6px', overflow:'hidden', zIndex:2, background:'#E6F1FB', color:'#0C447C', borderLeft:'3px solid #185FA5' }}>
+                      <div style={{ fontSize:'11px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}</div>
+                      <div style={{ fontSize:'10px', opacity:0.7, marginTop:'1px' }}>{minToStr(t.timeMin)} – {minToStr(t.timeMin+t.dur)}</div>
+                    </div>
+                  )
+                })}
+
+                {/* Tâches placées */}
                 {placed.map((t, idx) => {
                   const top = (t.timeMin - 8*60) * PPM
                   const height = Math.max(t.dur * PPM, 20)
-                  const colors = t.type === 'agenda'
-                    ? { bg:'#E6F1FB', text:'#0C447C', border:'#185FA5' }
-                    : { bg:'#EAF3DE', text:'#27500A', border: t.color || '#3B6D11' }
+                  const colors = { bg:'#EAF3DE', text:'#27500A', border: t.color || '#3B6D11' }
                   return (
                     <div key={t.id || idx} draggable
                       onDragStart={e => onCalDragStart(e, idx)}
