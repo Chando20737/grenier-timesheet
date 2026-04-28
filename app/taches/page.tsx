@@ -5,11 +5,12 @@ import { supabase } from '@/lib/supabase'
 const COLORS = ['#185FA5','#533AB7','#3B6D11','#854F0B','#A32D2D','#0F6E56','#9a8600','#633806']
 
 const navItems = [
-  { href:'/dashboard', label:'Minuterie du jour', icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="13" r="8" stroke="currentColor" strokeWidth="1.5"/><path d="M12 9v4l2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M9 2h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
+  { href:'/dashboard', label:'Minuterie du jour', icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="13" r="8" stroke="currentColor" strokeWidth="1.5"/><path d="M12 9v4l2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
+  { href:'/calendrier', label:'Mon calendrier', icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M3 9h18M9 3v6M15 3v6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
   { href:'/taches', label:'Mes tâches', active:true, icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M8 9h8M8 13h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
   { href:'/gmail', label:'Mes messages', icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M20 4H4C2.9 4 2 4.9 2 6v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2z" stroke="currentColor" strokeWidth="1.5"/><path d="M2 6l10 7 10-7" stroke="currentColor" strokeWidth="1.5"/></svg> },
-  { href:'/rapport', label:'Rapport équipe', icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 20V8l8-5 8 5v12H4z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/><path d="M9 20v-6h6v6" stroke="currentColor" strokeWidth="1.5"/></svg> },
-  { href:'/employes', label:'Employés', icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="7" r="3" stroke="currentColor" strokeWidth="1.5"/><path d="M3 17c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M16 11a4 4 0 0 1 0 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
+  { href:'/rapport', label:'Rapport équipe', adminOnly:true, icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 20V8l8-5 8 5v12H4z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/><path d="M9 20v-6h6v6" stroke="currentColor" strokeWidth="1.5"/></svg> },
+  { href:'/employes', label:'Employés', adminOnly:true, icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="7" r="3" stroke="currentColor" strokeWidth="1.5"/><path d="M3 17c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
 ]
 
 export default function TachesPage() {
@@ -24,18 +25,19 @@ export default function TachesPage() {
   const [catName, setCatName] = useState('')
   const [catColor, setCatColor] = useState(COLORS[0])
   const [userId, setUserId] = useState('')
+  const [isAdmin, setIsAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [initials, setInitials] = useState('ÉG')
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
-      if (data?.user) {
-        setUserId(data.user.id)
-        loadCategories(data.user.id)
-        loadTasks(data.user.id)
-        setLoading(false)
-      } else {
-        window.location.href = '/login'
-      }
+      if (!data.user) { window.location.href = '/login'; return }
+      setUserId(data.user.id)
+      setIsAdmin(data.user.email === 'eric@grenier.qc.ca')
+      setInitials(data.user.email?.split('@')[0].slice(0,2).toUpperCase() || 'ÉG')
+      loadCategories(data.user.id)
+      loadTasks(data.user.id)
+      setLoading(false)
     })
   }, [])
 
@@ -83,44 +85,35 @@ export default function TachesPage() {
 
   return (
     <div style={{ display:'flex', minHeight:'100vh' }}>
-      {/* Sidebar large */}
       <div style={{ width:'200px', background:'#111', display:'flex', flexDirection:'column', padding:'16px 0', flexShrink:0 }}>
-        {/* Logo + nom */}
-        <div style={{ display:'flex', alignItems:'center', gap:'10px', padding:'0 16px', marginBottom:'24px', cursor:'pointer' }} onClick={() => window.location.href = '/dashboard'}>
+        <div style={{ display:'flex', alignItems:'center', gap:'10px', padding:'0 16px', marginBottom:'24px', cursor:'pointer' }} onClick={() => window.location.href='/dashboard'}>
           <img src="/Grenier_Symbole_RGB.png" alt="Grenier" style={{ width:'32px', height:'32px', objectFit:'contain' }} />
-          <span style={{ color:'#F2E000', fontSize:'16px', fontWeight:'500', letterSpacing:'-0.3px' }}>Grenier</span>
+          <span style={{ color:'#F2E000', fontSize:'16px', fontWeight:'500' }}>Grenier</span>
         </div>
-
-        {/* Nav items */}
         <div style={{ display:'flex', flexDirection:'column', gap:'2px', padding:'0 8px' }}>
-          {navItems.map(item => (
-            <div key={item.href} onClick={() => window.location.href = item.href}
-              style={{ display:'flex', alignItems:'center', gap:'10px', padding:'9px 10px', borderRadius:'8px', cursor:'pointer', background: item.active ? '#F2E000' : 'transparent', color: item.active ? '#111' : 'rgba(255,255,255,0.6)', transition:'all 0.15s' }}
-              onMouseEnter={e => { if (!item.active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)' }}
-              onMouseLeave={e => { if (!item.active) (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
+          {navItems.filter(item => !item.adminOnly || isAdmin).map(item => (
+            <div key={item.href} onClick={() => window.location.href=item.href}
+              style={{ display:'flex', alignItems:'center', gap:'10px', padding:'9px 10px', borderRadius:'8px', cursor:'pointer', background: item.active ? '#F2E000' : 'transparent', color: item.active ? '#111' : 'rgba(255,255,255,0.6)' }}
+              onMouseEnter={e => { if (!item.active) (e.currentTarget as HTMLElement).style.background='rgba(255,255,255,0.08)' }}
+              onMouseLeave={e => { if (!item.active) (e.currentTarget as HTMLElement).style.background='transparent' }}>
               {item.icon}
               <span style={{ fontSize:'13px', fontWeight: item.active ? '500' : '400' }}>{item.label}</span>
             </div>
           ))}
         </div>
-
         <div style={{ flex:1 }} />
-
-        {/* Avatar / déconnexion */}
         <div style={{ padding:'0 8px' }}>
-          <div onClick={() => supabase.auth.signOut().then(() => window.location.href = '/login')}
+          <div onClick={() => supabase.auth.signOut().then(() => window.location.href='/login')}
             style={{ display:'flex', alignItems:'center', gap:'10px', padding:'9px 10px', borderRadius:'8px', cursor:'pointer', color:'rgba(255,255,255,0.5)' }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
-            <div style={{ width:'26px', height:'26px', borderRadius:'50%', background:'#F2E000', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'10px', fontWeight:'500', color:'#111', flexShrink:0 }}>ÉG</div>
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background='rgba(255,255,255,0.08)'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background='transparent'}>
+            <div style={{ width:'26px', height:'26px', borderRadius:'50%', background:'#F2E000', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'10px', fontWeight:'500', color:'#111' }}>{initials}</div>
             <span style={{ fontSize:'12px' }}>Déconnexion</span>
           </div>
         </div>
       </div>
 
-      {/* Main */}
       <div style={{ flex:1, display:'flex', flexDirection:'column', minHeight:'100vh' }}>
-        {/* Barre de titre noire */}
         <div style={{ background:'#111', padding:'14px 1.25rem', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
           <h1 style={{ fontSize:'15px', fontWeight:'500', color:'#F2E000' }}>Mes tâches</h1>
           <button onClick={() => setShowModal(true)}
@@ -129,7 +122,6 @@ export default function TachesPage() {
           </button>
         </div>
 
-        {/* Contenu */}
         <div style={{ flex:1, background:'#f5f4f0', padding:'1.25rem' }}>
           <div style={{ display:'flex', gap:'6px', flexWrap:'wrap', marginBottom:'1rem' }}>
             <div onClick={() => setFilter('toutes')}
@@ -172,68 +164,66 @@ export default function TachesPage() {
             ))}
           </div>
         </div>
-      </div>
 
-      {/* Modal nouvelle tâche */}
-      {showModal && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50 }}>
-          <div style={{ background:'white', borderRadius:'16px', padding:'1.5rem', width:'320px' }}>
-            <div style={{ fontSize:'14px', fontWeight:'500', marginBottom:'1rem' }}>Nouvelle tâche</div>
-            <div style={{ marginBottom:'10px' }}>
-              <label style={{ fontSize:'11px', color:'#777', display:'block', marginBottom:'4px' }}>Description</label>
-              <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="Ex: Préparer la réunion"
-                style={{ width:'100%', padding:'8px 10px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', outline:'none' }} />
-            </div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px', marginBottom:'12px' }}>
-              <div>
-                <label style={{ fontSize:'11px', color:'#777', display:'block', marginBottom:'4px' }}>Catégorie</label>
-                <select value={catId} onChange={e => setCatId(e.target.value)}
-                  style={{ width:'100%', padding:'8px 10px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', outline:'none' }}>
-                  <option value="">–</option>
-                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={{ fontSize:'11px', color:'#777', display:'block', marginBottom:'4px' }}>Durée estimée</label>
-                <input value={est} onChange={e => setEst(e.target.value)} placeholder="ex: 1h 30"
+        {showModal && (
+          <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50 }}>
+            <div style={{ background:'white', borderRadius:'16px', padding:'1.5rem', width:'320px' }}>
+              <div style={{ fontSize:'14px', fontWeight:'500', marginBottom:'1rem' }}>Nouvelle tâche</div>
+              <div style={{ marginBottom:'10px' }}>
+                <label style={{ fontSize:'11px', color:'#777', display:'block', marginBottom:'4px' }}>Description</label>
+                <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="Ex: Préparer la réunion"
                   style={{ width:'100%', padding:'8px 10px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', outline:'none' }} />
               </div>
-            </div>
-            <div style={{ display:'flex', gap:'8px', justifyContent:'flex-end' }}>
-              <button onClick={() => setShowModal(false)} style={{ padding:'7px 14px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', background:'none', cursor:'pointer' }}>Annuler</button>
-              <button onClick={addTask} style={{ padding:'7px 16px', fontSize:'13px', background:'#F2E000', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>Ajouter</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal nouvelle catégorie */}
-      {showCatModal && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50 }}>
-          <div style={{ background:'white', borderRadius:'16px', padding:'1.5rem', width:'300px' }}>
-            <div style={{ fontSize:'14px', fontWeight:'500', marginBottom:'4px' }}>Nouvelle catégorie</div>
-            <div style={{ fontSize:'12px', color:'#aaa', marginBottom:'1rem' }}>Visible par vous seulement.</div>
-            <div style={{ marginBottom:'12px' }}>
-              <label style={{ fontSize:'11px', color:'#777', display:'block', marginBottom:'4px' }}>Nom</label>
-              <input value={catName} onChange={e => setCatName(e.target.value)} placeholder="Ex: Marketing"
-                style={{ width:'100%', padding:'8px 10px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', outline:'none' }} />
-            </div>
-            <div style={{ marginBottom:'12px' }}>
-              <label style={{ fontSize:'11px', color:'#777', display:'block', marginBottom:'6px' }}>Couleur</label>
-              <div style={{ display:'flex', gap:'8px', flexWrap:'wrap' }}>
-                {COLORS.map(c => (
-                  <div key={c} onClick={() => setCatColor(c)}
-                    style={{ width:'22px', height:'22px', borderRadius:'50%', background:c, cursor:'pointer', border: catColor===c ? '2px solid #111' : '2px solid transparent' }} />
-                ))}
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px', marginBottom:'12px' }}>
+                <div>
+                  <label style={{ fontSize:'11px', color:'#777', display:'block', marginBottom:'4px' }}>Catégorie</label>
+                  <select value={catId} onChange={e => setCatId(e.target.value)}
+                    style={{ width:'100%', padding:'8px 10px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', outline:'none' }}>
+                    <option value="">–</option>
+                    {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize:'11px', color:'#777', display:'block', marginBottom:'4px' }}>Durée estimée</label>
+                  <input value={est} onChange={e => setEst(e.target.value)} placeholder="ex: 1h 30"
+                    style={{ width:'100%', padding:'8px 10px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', outline:'none' }} />
+                </div>
+              </div>
+              <div style={{ display:'flex', gap:'8px', justifyContent:'flex-end' }}>
+                <button onClick={() => setShowModal(false)} style={{ padding:'7px 14px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', background:'none', cursor:'pointer' }}>Annuler</button>
+                <button onClick={addTask} style={{ padding:'7px 16px', fontSize:'13px', background:'#F2E000', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>Ajouter</button>
               </div>
             </div>
-            <div style={{ display:'flex', gap:'8px', justifyContent:'flex-end' }}>
-              <button onClick={() => setShowCatModal(false)} style={{ padding:'7px 14px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', background:'none', cursor:'pointer' }}>Annuler</button>
-              <button onClick={addCategory} style={{ padding:'7px 16px', fontSize:'13px', background:'#F2E000', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>Créer</button>
+          </div>
+        )}
+
+        {showCatModal && (
+          <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50 }}>
+            <div style={{ background:'white', borderRadius:'16px', padding:'1.5rem', width:'300px' }}>
+              <div style={{ fontSize:'14px', fontWeight:'500', marginBottom:'4px' }}>Nouvelle catégorie</div>
+              <div style={{ fontSize:'12px', color:'#aaa', marginBottom:'1rem' }}>Visible par vous seulement.</div>
+              <div style={{ marginBottom:'12px' }}>
+                <label style={{ fontSize:'11px', color:'#777', display:'block', marginBottom:'4px' }}>Nom</label>
+                <input value={catName} onChange={e => setCatName(e.target.value)} placeholder="Ex: Marketing"
+                  style={{ width:'100%', padding:'8px 10px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', outline:'none' }} />
+              </div>
+              <div style={{ marginBottom:'12px' }}>
+                <label style={{ fontSize:'11px', color:'#777', display:'block', marginBottom:'6px' }}>Couleur</label>
+                <div style={{ display:'flex', gap:'8px', flexWrap:'wrap' }}>
+                  {COLORS.map(c => (
+                    <div key={c} onClick={() => setCatColor(c)}
+                      style={{ width:'22px', height:'22px', borderRadius:'50%', background:c, cursor:'pointer', border: catColor===c ? '2px solid #111' : '2px solid transparent' }} />
+                  ))}
+                </div>
+              </div>
+              <div style={{ display:'flex', gap:'8px', justifyContent:'flex-end' }}>
+                <button onClick={() => setShowCatModal(false)} style={{ padding:'7px 14px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', background:'none', cursor:'pointer' }}>Annuler</button>
+                <button onClick={addCategory} style={{ padding:'7px 16px', fontSize:'13px', background:'#F2E000', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>Créer</button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
