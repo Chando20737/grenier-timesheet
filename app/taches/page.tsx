@@ -4,6 +4,14 @@ import { supabase } from '@/lib/supabase'
 
 const COLORS = ['#185FA5','#533AB7','#3B6D11','#854F0B','#A32D2D','#0F6E56','#9a8600','#633806']
 
+const navItems = [
+  { href:'/dashboard', label:'Minuterie du jour', icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="13" r="8" stroke="currentColor" strokeWidth="1.5"/><path d="M12 9v4l2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M9 2h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
+  { href:'/taches', label:'Mes tâches', active:true, icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M8 9h8M8 13h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
+  { href:'/gmail', label:'Mes messages', icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M20 4H4C2.9 4 2 4.9 2 6v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2z" stroke="currentColor" strokeWidth="1.5"/><path d="M2 6l10 7 10-7" stroke="currentColor" strokeWidth="1.5"/></svg> },
+  { href:'/rapport', label:'Rapport équipe', icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 20V8l8-5 8 5v12H4z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/><path d="M9 20v-6h6v6" stroke="currentColor" strokeWidth="1.5"/></svg> },
+  { href:'/employes', label:'Employés', icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="7" r="3" stroke="currentColor" strokeWidth="1.5"/><path d="M3 17c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M16 11a4 4 0 0 1 0 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
+]
+
 export default function TachesPage() {
   const [tasks, setTasks] = useState<any[]>([])
   const [categories, setCategories] = useState<any[]>([])
@@ -75,28 +83,38 @@ export default function TachesPage() {
 
   return (
     <div style={{ display:'flex', minHeight:'100vh' }}>
-      {/* Sidebar */}
-      <div style={{ width:'52px', background:'#111', display:'flex', flexDirection:'column', alignItems:'center', padding:'12px 0', gap:'6px', flexShrink:0 }}>
-        {/* Logo */}
-        <div style={{ width:'36px', height:'36px', marginBottom:'10px', cursor:'pointer' }} onClick={() => window.location.href = '/dashboard'}>
-          <img src="/Grenier_Symbole_RGB.png" alt="Grenier" style={{ width:'100%', height:'100%', objectFit:'contain' }} />
+      {/* Sidebar large */}
+      <div style={{ width:'200px', background:'#111', display:'flex', flexDirection:'column', padding:'16px 0', flexShrink:0 }}>
+        {/* Logo + nom */}
+        <div style={{ display:'flex', alignItems:'center', gap:'10px', padding:'0 16px', marginBottom:'24px', cursor:'pointer' }} onClick={() => window.location.href = '/dashboard'}>
+          <img src="/Grenier_Symbole_RGB.png" alt="Grenier" style={{ width:'32px', height:'32px', objectFit:'contain' }} />
+          <span style={{ color:'#F2E000', fontSize:'16px', fontWeight:'500', letterSpacing:'-0.3px' }}>Grenier</span>
         </div>
-        {[
-          { href:'/dashboard', icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="13" r="8" stroke="white" strokeWidth="1.5"/><path d="M12 9v4l2.5 2.5" stroke="white" strokeWidth="1.5" strokeLinecap="round"/></svg> },
-          { href:'/taches', active:true, icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#111" strokeWidth="1.5"/><path d="M8 9h8M8 13h5" stroke="#111" strokeWidth="1.5" strokeLinecap="round"/></svg> },
-          { href:'/gmail', icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M20 4H4C2.9 4 2 4.9 2 6v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2z" stroke="white" strokeWidth="1.5"/><path d="M2 6l10 7 10-7" stroke="white" strokeWidth="1.5"/></svg> },
-          { href:'/rapport', icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 20V8l8-5 8 5v12H4z" stroke="white" strokeWidth="1.5" strokeLinejoin="round"/><path d="M9 20v-6h6v6" stroke="white" strokeWidth="1.5"/></svg> },
-          { href:'/employes', icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="7" r="3" stroke="white" strokeWidth="1.5"/><path d="M3 17c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="white" strokeWidth="1.5" strokeLinecap="round"/></svg> },
-        ].map(item => (
-          <div key={item.href} onClick={() => window.location.href = item.href}
-            style={{ width:'36px', height:'36px', borderRadius:'8px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', background: item.active ? '#F2E000' : 'transparent' }}>
-            {item.icon}
-          </div>
-        ))}
+
+        {/* Nav items */}
+        <div style={{ display:'flex', flexDirection:'column', gap:'2px', padding:'0 8px' }}>
+          {navItems.map(item => (
+            <div key={item.href} onClick={() => window.location.href = item.href}
+              style={{ display:'flex', alignItems:'center', gap:'10px', padding:'9px 10px', borderRadius:'8px', cursor:'pointer', background: item.active ? '#F2E000' : 'transparent', color: item.active ? '#111' : 'rgba(255,255,255,0.6)', transition:'all 0.15s' }}
+              onMouseEnter={e => { if (!item.active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)' }}
+              onMouseLeave={e => { if (!item.active) (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
+              {item.icon}
+              <span style={{ fontSize:'13px', fontWeight: item.active ? '500' : '400' }}>{item.label}</span>
+            </div>
+          ))}
+        </div>
+
         <div style={{ flex:1 }} />
-        <div onClick={() => supabase.auth.signOut().then(() => window.location.href = '/login')}
-          style={{ width:'30px', height:'30px', borderRadius:'50%', background:'#F2E000', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'11px', fontWeight:'500', color:'#111', cursor:'pointer' }}>
-          ÉG
+
+        {/* Avatar / déconnexion */}
+        <div style={{ padding:'0 8px' }}>
+          <div onClick={() => supabase.auth.signOut().then(() => window.location.href = '/login')}
+            style={{ display:'flex', alignItems:'center', gap:'10px', padding:'9px 10px', borderRadius:'8px', cursor:'pointer', color:'rgba(255,255,255,0.5)' }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+            <div style={{ width:'26px', height:'26px', borderRadius:'50%', background:'#F2E000', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'10px', fontWeight:'500', color:'#111', flexShrink:0 }}>ÉG</div>
+            <span style={{ fontSize:'12px' }}>Déconnexion</span>
+          </div>
         </div>
       </div>
 
