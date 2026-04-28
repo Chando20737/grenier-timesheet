@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import { supabase } from '@/lib/supabase'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -10,27 +11,13 @@ export default function LoginPage() {
   async function login() {
     setLoading(true)
     setError('')
-    const { createClient } = await import('@supabase/supabase-js')
-    const sb = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
-      { auth: { persistSession: true, storageKey: 'sb-grenier-auth-token' } }
-    )
-    const { data, error } = await sb.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
       setError('Courriel ou mot de passe incorrect.')
       setLoading(false)
       return
     }
-    if (data.session) {
-      localStorage.setItem('sb-grenier-auth-token', JSON.stringify({
-        access_token: data.session.access_token,
-        refresh_token: data.session.refresh_token,
-        expires_at: data.session.expires_at,
-        token_type: data.session.token_type,
-        user: data.session.user
-      }))
-    }
+    console.log('session after login:', data.session)
     window.location.replace('/taches')
   }
 
