@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 
 const navItems = [
   { href:'/dashboard', label:'Minuterie du jour', active:true, icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="13" r="8" stroke="currentColor" strokeWidth="1.5"/><path d="M12 9v4l2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M9 2h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
+  { href:'/calendrier', label:'Mon calendrier', icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M3 9h18M9 3v6M15 3v6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
   { href:'/taches', label:'Mes tâches', icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M8 9h8M8 13h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
   { href:'/gmail', label:'Mes messages', icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M20 4H4C2.9 4 2 4.9 2 6v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2z" stroke="currentColor" strokeWidth="1.5"/><path d="M2 6l10 7 10-7" stroke="currentColor" strokeWidth="1.5"/></svg> },
   { href:'/rapport', label:'Rapport équipe', adminOnly:true, icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 20V8l8-5 8 5v12H4z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/><path d="M9 20v-6h6v6" stroke="currentColor" strokeWidth="1.5"/></svg> },
@@ -117,18 +118,17 @@ export default function DashboardPage() {
 
   return (
     <div style={{ display:'flex', minHeight:'100vh' }}>
-      {/* Sidebar */}
       <div style={{ width:'200px', background:'#111', display:'flex', flexDirection:'column', padding:'16px 0', flexShrink:0 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:'10px', padding:'0 16px', marginBottom:'24px', cursor:'pointer' }} onClick={() => window.location.href = '/dashboard'}>
+        <div style={{ display:'flex', alignItems:'center', gap:'10px', padding:'0 16px', marginBottom:'24px', cursor:'pointer' }} onClick={() => window.location.href='/dashboard'}>
           <img src="/Grenier_Symbole_RGB.png" alt="Grenier" style={{ width:'32px', height:'32px', objectFit:'contain' }} />
           <span style={{ color:'#F2E000', fontSize:'16px', fontWeight:'500' }}>Grenier</span>
         </div>
         <div style={{ display:'flex', flexDirection:'column', gap:'2px', padding:'0 8px' }}>
           {navItems.filter(item => !item.adminOnly || isAdmin).map(item => (
-            <div key={item.href} onClick={() => window.location.href = item.href}
+            <div key={item.href} onClick={() => window.location.href=item.href}
               style={{ display:'flex', alignItems:'center', gap:'10px', padding:'9px 10px', borderRadius:'8px', cursor:'pointer', background: item.active ? '#F2E000' : 'transparent', color: item.active ? '#111' : 'rgba(255,255,255,0.6)' }}
-              onMouseEnter={e => { if (!item.active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)' }}
-              onMouseLeave={e => { if (!item.active) (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
+              onMouseEnter={e => { if (!item.active) (e.currentTarget as HTMLElement).style.background='rgba(255,255,255,0.08)' }}
+              onMouseLeave={e => { if (!item.active) (e.currentTarget as HTMLElement).style.background='transparent' }}>
               {item.icon}
               <span style={{ fontSize:'13px', fontWeight: item.active ? '500' : '400' }}>{item.label}</span>
             </div>
@@ -136,19 +136,17 @@ export default function DashboardPage() {
         </div>
         <div style={{ flex:1 }} />
         <div style={{ padding:'0 8px' }}>
-          <div onClick={() => supabase.auth.signOut().then(() => window.location.href = '/login')}
+          <div onClick={() => supabase.auth.signOut().then(() => window.location.href='/login')}
             style={{ display:'flex', alignItems:'center', gap:'10px', padding:'9px 10px', borderRadius:'8px', cursor:'pointer', color:'rgba(255,255,255,0.5)' }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
-            <div style={{ width:'26px', height:'26px', borderRadius:'50%', background:'#F2E000', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'10px', fontWeight:'500', color:'#111', flexShrink:0 }}>{initials}</div>
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background='rgba(255,255,255,0.08)'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background='transparent'}>
+            <div style={{ width:'26px', height:'26px', borderRadius:'50%', background:'#F2E000', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'10px', fontWeight:'500', color:'#111' }}>{initials}</div>
             <span style={{ fontSize:'12px' }}>Déconnexion</span>
           </div>
         </div>
       </div>
 
-      {/* Main */}
       <div style={{ flex:1, display:'flex', flexDirection:'column', minHeight:'100vh' }}>
-        {/* Barre titre */}
         <div style={{ background:'#111', padding:'14px 1.25rem', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
           <h1 style={{ fontSize:'15px', fontWeight:'500', color:'#F2E000' }}>Minuterie du jour</h1>
           <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
@@ -158,9 +156,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Contenu */}
         <div style={{ flex:1, background:'#f5f4f0', padding:'1.25rem', display:'flex', flexDirection:'column', gap:'12px' }}>
-          {/* Timer bar */}
           <div style={{ background:'white', border:'0.5px solid rgba(0,0,0,0.1)', borderRadius:'12px', padding:'12px 14px', display:'flex', alignItems:'center', gap:'10px' }}>
             <input style={{ flex:1, border:'none', background:'transparent', fontSize:'14px', outline:'none' }}
               placeholder="Sur quoi travaillez-vous ?" value={description} onChange={e => setDescription(e.target.value)} />
@@ -177,13 +173,11 @@ export default function DashboardPage() {
             </button>
           </div>
 
-          {/* Section label */}
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
             <span style={{ fontSize:'11px', fontWeight:'500', color:'#aaa', textTransform:'uppercase', letterSpacing:'0.7px' }}>Entrées</span>
             <span style={{ fontSize:'12px', color:'#777' }}>Total : {fmtH(totalSec)}</span>
           </div>
 
-          {/* Entries */}
           <div style={{ display:'flex', flexDirection:'column', gap:'6px' }}>
             {entries.length === 0 && <div style={{ textAlign:'center', fontSize:'13px', color:'#aaa', padding:'1.5rem 0' }}>Aucune entrée pour ce jour.</div>}
             {entries.map(e => (
@@ -199,7 +193,6 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          {/* Ajout manuel */}
           <div>
             <button onClick={() => setShowManual(!showManual)} style={{ fontSize:'12px', color:'#aaa', border:'none', background:'none', cursor:'pointer', padding:0 }}>
               + Ajouter une entrée manuellement
@@ -239,7 +232,6 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* Stats */}
           <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'8px' }}>
             {[
               { label:"Aujourd'hui", val: fmtH(totalSec), sub:'sur 8h objectif' },
