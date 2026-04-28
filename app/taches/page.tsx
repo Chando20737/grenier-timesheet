@@ -39,10 +39,12 @@ export default function TachesPage() {
   }
 
   async function loadTasks(uid: string) {
-    const { data, error } = await supabase.from('tasks').select('*, category:categories(name,color)').eq('user_id', uid).order('created_at', { ascending: false })
-    if (error) console.error('tasks error:', error)
-    setTasks(data || [])
-  }
+  const session = await supabase.auth.getSession()
+  console.log('token:', session.data.session?.access_token?.slice(0, 50))
+  const { data, error } = await supabase.from('tasks').select('*, category:categories(name,color)').eq('user_id', uid).order('created_at', { ascending: false })
+  if (error) console.error('tasks error:', error)
+  setTasks(data || [])
+}
 
   async function addTask() {
     if (!desc.trim() || !userId) return
