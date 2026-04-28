@@ -117,7 +117,7 @@ export default function CalendrierPage() {
   function connectGoogle() {
     if (!user) return
     const params = new URLSearchParams({
-      client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '',
+      client_id: '392924135139-b5vabavgfccreks5so7ivk63i9ktssb.apps.googleusercontent.com',
       redirect_uri: `${window.location.origin}/api/auth/callback/google`,
       response_type: 'code',
       scope: 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly',
