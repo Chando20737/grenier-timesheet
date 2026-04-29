@@ -31,8 +31,8 @@ export async function GET(req: NextRequest) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       code,
-      client_id: process.env.GOOGLE_CLIENT_ID!,
-      client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+      client_id: '785771322332-oiflm3ig5j55uinj1geu7tcimsn7s28t.apps.googleusercontent.com',
+      client_secret: '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',
       redirect_uri: redirectUri,
       grant_type: 'authorization_code',
     }),
