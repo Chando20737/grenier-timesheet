@@ -53,17 +53,20 @@ export default function CalendrierPage() {
       setUser(data.user)
       setIsAdmin(data.user.email === 'eric@grenier.qc.ca')
       setLoading(false)
-      loadTasks(data.user.id)
       checkGoogleConnection(data.user.id)
     })
-    // Vérifier si Google vient d'être connecté
     const params = new URLSearchParams(window.location.search)
     if (params.get('google') === 'connected') {
       window.history.replaceState({}, '', '/calendrier')
     }
   }, [])
 
-  useEffect(() => { if (user) { loadTasks(user.id); loadGoogleEvents(user.id) } }, [user, weekOffset, selectedDay])
+  useEffect(() => {
+    if (user) {
+      loadTasks(user.id)
+      loadGoogleEvents(user.id)
+    }
+  }, [user, weekOffset, selectedDay])
 
   async function checkGoogleConnection(uid: string) {
     const { data } = await supabase.from('users').select('google_access_token').eq('id', uid).single()
@@ -99,10 +102,9 @@ export default function CalendrierPage() {
     const dateStr = d.toISOString().split('T')[0]
     try {
       const res = await fetch(`/api/calendar/sync?userId=${uid}&date=${dateStr}`)
-      if (res.status === 401) { setGoogleConnected(false); return }
+      if (res.status === 401) { return } // Ne pas changer googleConnected ici !
       const data = await res.json()
       if (data.events) {
-        setGoogleConnected(true)
         setGoogleEvents(data.events.filter((e: any) => !e.allDay).map((e: any) => {
           const start = new Date(e.start)
           const end = new Date(e.end)
@@ -110,8 +112,12 @@ export default function CalendrierPage() {
           const dur = Math.round((end.getTime() - start.getTime()) / 60000)
           return { id: e.id, title: e.title, timeMin, dur, type: 'agenda' }
         }))
+      } else {
+        setGoogleEvents([])
       }
-    } catch {}
+    } catch {
+      setGoogleEvents([])
+    }
   }
 
   function connectGoogle() {
@@ -240,7 +246,6 @@ export default function CalendrierPage() {
   const friday = new Date(monday); friday.setDate(monday.getDate()+4)
   const todayStr = new Date().toISOString().split('T')[0]
   const initials = user?.email?.split('@')[0].slice(0,2).toUpperCase() || 'ÉG'
-  const allCalEvents = [...placed, ...googleEvents]
 
   if (loading) return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#f5f4f0' }}>
@@ -284,14 +289,13 @@ export default function CalendrierPage() {
         {/* Topbar */}
         <div style={{ background:'#111', padding:'10px 1rem', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
           <h1 style={{ fontSize:'15px', fontWeight:'500', color:'#F2E000' }}>Mon calendrier</h1>
-          {!googleConnected && (
+          {!googleConnected ? (
             <button onClick={connectGoogle}
               style={{ background:'white', border:'none', borderRadius:'8px', padding:'6px 12px', fontSize:'12px', fontWeight:'500', cursor:'pointer', color:'#111', display:'flex', alignItems:'center', gap:'6px' }}>
               <svg width="14" height="14" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
               Connecter Google Agenda
             </button>
-          )}
-          {googleConnected && (
+          ) : (
             <div style={{ display:'flex', alignItems:'center', gap:'6px', fontSize:'12px', color:'rgba(255,255,255,0.5)' }}>
               <div style={{ width:'7px', height:'7px', borderRadius:'50%', background:'#34A853' }} />
               Google Agenda connecté
@@ -368,7 +372,7 @@ export default function CalendrierPage() {
                 ))}
                 <div id="cal-ghost" style={{ display:'none', position:'absolute', left:'4px', right:'4px', background:'rgba(242,224,0,0.25)', border:'1.5px dashed #D4B800', borderRadius:'5px', pointerEvents:'none', zIndex:3 }} />
 
-                {/* Événements Google Agenda */}
+                {/* Événements Google */}
                 {googleEvents.map((t, idx) => {
                   const top = (t.timeMin - 8*60) * PPM
                   const height = Math.max(t.dur * PPM, 20)
