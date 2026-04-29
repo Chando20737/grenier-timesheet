@@ -14,16 +14,13 @@ export async function GET(req: NextRequest) {
   console.log('=== GOOGLE CALLBACK ===')
   console.log('code:', code ? 'présent' : 'MANQUANT')
   console.log('state (userId):', state)
-  console.log('APP_URL:', process.env.NEXT_PUBLIC_APP_URL)
-  console.log('CLIENT_ID:', process.env.GOOGLE_CLIENT_ID ? 'présent' : 'MANQUANT')
-  console.log('CLIENT_SECRET:', process.env.GOOGLE_CLIENT_SECRET ? 'présent' : 'MANQUANT')
 
   if (!code || !state) {
     console.log('ERREUR: code ou state manquant')
     return NextResponse.redirect(new URL('/dashboard', req.url))
   }
 
-  const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/callback/google`
+  const redirectUri = 'https://grenier-timesheet.vercel.app/api/auth/callback/google'
   console.log('redirect_uri utilisé:', redirectUri)
 
   const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
