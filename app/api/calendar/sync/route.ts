@@ -18,11 +18,12 @@ async function refreshToken(userId: string, refreshToken: string) {
     }),
   })
   const data = await res.json()
-  if (data.access_token) {
-    await supabase.from('users').update({ google_access_token: data.access_token }).eq('id', userId)
-    return data.access_token
+  if (!data.access_token) {
+    console.log('[refresh] Google returned:', data)
+    return null
   }
-  return null
+  await supabase.from('users').update({ google_access_token: data.access_token }).eq('id', userId)
+  return data.access_token
 }
 
 export async function GET(req: NextRequest) {
@@ -30,11 +31,28 @@ export async function GET(req: NextRequest) {
   const userId = searchParams.get('userId')
   const dateStr = searchParams.get('date') // YYYY-MM-DD
 
-  if (!userId || !dateStr) return NextResponse.json({ error: 'Missing params' }, { status: 400 })
+  if (!userId || !dateStr) {
+    return NextResponse.json({ error: 'Missing params' }, { status: 400 })
+  }
 
-  const { data: user } = await supabase.from('users').select('google_access_token, google_refresh_token').eq('id', userId).single()
+  const { data: user, error: userError } = await supabase
+    .from('users')
+    .select('google_access_token, google_refresh_token')
+    .eq('id', userId)
+    .single()
+
+  if (userError) {
+    console.log('[sync] DB error fetching user:', userError)
+  }
+
+  console.log('[sync] user tokens:', {
+    userId,
+    has_access: !!user?.google_access_token,
+    has_refresh: !!user?.google_refresh_token,
+  })
 
   if (!user?.google_access_token) {
+    console.log('[sync] not_connected for user', userId)
     return NextResponse.json({ error: 'not_connected' }, { status: 401 })
   }
 
@@ -52,12 +70,18 @@ export async function GET(req: NextRequest) {
   }
 
   let res = await fetchEvents(accessToken)
+  console.log('[sync] initial Google response:', res.status)
 
   // Token expiré — rafraîchir
   if (res.status === 401 && user.google_refresh_token) {
+    console.log('[sync] access token expired, refreshing...')
     accessToken = await refreshToken(userId, user.google_refresh_token)
-    if (!accessToken) return NextResponse.json({ error: 'token_expired' }, { status: 401 })
+    if (!accessToken) {
+      console.log('[sync] refresh failed')
+      return NextResponse.json({ error: 'token_expired' }, { status: 401 })
+    }
     res = await fetchEvents(accessToken)
+    console.log('[sync] after refresh, Google response:', res.status)
   }
 
   const data = await res.json()
