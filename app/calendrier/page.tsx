@@ -444,6 +444,36 @@ export default function CalendrierPage() {
     loadWeek(user.id)
   }
 
+  function startTimerFromTask() {
+    if (!editTask || !user) return
+    // Vérifier s'il y a déjà un chrono en cours
+    const existing = localStorage.getItem('grenier-timer')
+    if (existing) {
+      try {
+        const s = JSON.parse(existing)
+        if ((s.running || s.paused) && s.elapsed > 0) {
+          if (!confirm('Un chrono est déjà en cours. Le remplacer par cette tâche ?\n\nNote : le temps en cours sera perdu (non sauvegardé).')) {
+            return
+          }
+        }
+      } catch {}
+    }
+    // Sauvegarder l'état du chrono dans localStorage
+    const timerState = {
+      userId: user.id,
+      description: editForm.title || editTask.description || '',
+      catId: editForm.cat || editTask.category_id || '',
+      startTime: new Date().toISOString(),
+      elapsed: 0,
+      running: true,
+      paused: false,
+      lastTick: Date.now(),
+    }
+    localStorage.setItem('grenier-timer', JSON.stringify(timerState))
+    setEditTask(null)
+    window.location.href = '/dashboard'
+  }
+
   function addSubtask() {
     if (!newSubtask.trim()) return
     setEditForm({
@@ -1061,10 +1091,18 @@ export default function CalendrierPage() {
             </div>
 
             <div style={{ display:'flex', gap:'8px', justifyContent:'space-between', alignItems:'center' }}>
-              <button onClick={() => deleteTask(editTask.id)}
-                style={{ padding:'7px 14px', fontSize:'12px', border:'0.5px solid #E24B4A', borderRadius:'8px', background:'white', color:'#E24B4A', cursor:'pointer' }}>
-                Supprimer
-              </button>
+              <div style={{ display:'flex', gap:'8px' }}>
+                <button onClick={() => deleteTask(editTask.id)}
+                  style={{ padding:'7px 14px', fontSize:'12px', border:'0.5px solid #E24B4A', borderRadius:'8px', background:'white', color:'#E24B4A', cursor:'pointer' }}>
+                  Supprimer
+                </button>
+                <button onClick={startTimerFromTask}
+                  title="Démarrer la minuterie pour cette tâche"
+                  style={{ padding:'7px 14px', fontSize:'12px', border:'0.5px solid #3B6D11', borderRadius:'8px', background:'white', color:'#3B6D11', cursor:'pointer', display:'flex', alignItems:'center', gap:'5px' }}>
+                  <svg width="11" height="11" viewBox="0 0 10 12"><polygon points="0,0 10,6 0,12" fill="#3B6D11"/></svg>
+                  Démarrer la minuterie
+                </button>
+              </div>
               <div style={{ display:'flex', gap:'8px' }}>
                 <button onClick={() => setEditTask(null)}
                   style={{ padding:'7px 14px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', background:'white', cursor:'pointer' }}>
