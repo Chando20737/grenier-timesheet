@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
   let accessToken = user.google_access_token
 
   // 1. Lister les IDs des messages de l'inbox
-  const listUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?labelIds=INBOX&maxResults=50${pageToken ? `&pageToken=${pageToken}` : ''}`
+  const listUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?labelIds=INBOX&q=-in:trash -in:spam&maxResults=50${pageToken ? `&pageToken=${pageToken}` : ''}`
 
   const fetchList = (token: string) =>
     fetch(listUrl, { headers: { Authorization: `Bearer ${token}` } })
