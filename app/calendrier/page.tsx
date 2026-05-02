@@ -45,17 +45,20 @@ function ymd(d: Date): string {
 
 // Vérifie si une tâche récurrente doit apparaître à une date donnée
 function recurrenceMatches(recurrence: string, baseDate: Date, targetDate: Date): boolean {
-  if (targetDate < baseDate) return false
-  const diffDays = Math.floor((targetDate.getTime() - baseDate.getTime()) / (1000*60*60*24))
+  // On normalise aux dates seules (minuit local) pour éviter les problèmes de fuseaux horaires
+  const base = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate())
+  const target = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate())
+  if (target < base) return false
+  const diffDays = Math.round((target.getTime() - base.getTime()) / (1000*60*60*24))
   switch (recurrence) {
     case 'daily': return true
     case 'weekdays': {
-      const day = targetDate.getDay()
+      const day = target.getDay()
       return day >= 1 && day <= 5
     }
-    case 'weekly': return diffDays % 7 === 0
-    case 'biweekly': return diffDays % 14 === 0
-    case 'monthly': return targetDate.getDate() === baseDate.getDate()
+    case 'weekly': return target.getDay() === base.getDay()
+    case 'biweekly': return target.getDay() === base.getDay() && diffDays % 14 === 0
+    case 'monthly': return target.getDate() === base.getDate()
     default: return false
   }
 }
