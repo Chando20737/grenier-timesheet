@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -65,7 +67,10 @@ export async function GET(req: NextRequest) {
   const listUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?${listParams}`
 
   const fetchList = (token: string) =>
-    fetch(listUrl, { headers: { Authorization: `Bearer ${token}` } })
+  fetch(listUrl, { 
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
+  })
 
   let listRes = await fetchList(accessToken)
   console.log('[gmail] initial list response:', listRes.status, 'has_refresh:', !!user.google_refresh_token)
@@ -105,9 +110,12 @@ export async function GET(req: NextRequest) {
     messageIds.map(async ({ id }) => {
       try {
         const res = await fetch(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`,
-          { headers: { Authorization: `Bearer ${accessToken}` } }
-        )
+  `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`,
+  { 
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: 'no-store',
+  }
+)
         if (!res.ok) return null
         const data = await res.json()
         const headers = data.payload?.headers || []
