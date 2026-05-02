@@ -43,9 +43,7 @@ function ymd(d: Date): string {
   return `${yyyy}-${mm}-${dd}`
 }
 
-// Vérifie si une tâche récurrente doit apparaître à une date donnée
 function recurrenceMatches(recurrence: string, baseDate: Date, targetDate: Date): boolean {
-  // On normalise aux dates seules (minuit local) pour éviter les problèmes de fuseaux horaires
   const base = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate())
   const target = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate())
   if (target < base) return false
@@ -62,6 +60,8 @@ function recurrenceMatches(recurrence: string, baseDate: Date, targetDate: Date)
     default: return false
   }
 }
+
+function uid() { return Math.random().toString(36).slice(2,10) }
 
 export default function CalendrierPage() {
   const [user, setUser] = useState<any>(null)
@@ -87,11 +87,12 @@ export default function CalendrierPage() {
   const [dropEmailModal, setDropEmailModal] = useState<{ message: any, dayIdx: number } | null>(null)
   const [emailForm, setEmailForm] = useState({ title: '', time: '09:00', dur: '30', cat: '', includeLink: true })
 
-  // Édition d'une tâche
   const [editTask, setEditTask] = useState<any>(null)
   const [editForm, setEditForm] = useState({
     title: '', cat: '', dur: '60', date: '', time: '', recurrence: '',
+    notes: '', subtasks: [] as { id: string, text: string, done: boolean }[],
   })
+  const [newSubtask, setNewSubtask] = useState('')
 
   const dragCalOffset = useRef(0)
   const dragWeekTask = useRef<any>(null)
@@ -136,21 +137,21 @@ export default function CalendrierPage() {
   }
 
   async function loadGmail(uid: string) {
-  setGmailLoading(true)
-  try {
-    const res = await fetch(`/api/gmail/list?userId=${uid}&t=${Date.now()}`, {
-      cache: 'no-store',
-      headers: { 'Cache-Control': 'no-cache' },
-    })
-    if (res.status === 401) { setGmailMessages([]); return }
-    const data = await res.json()
-    setGmailMessages(data.messages || [])
-  } catch {
-    setGmailMessages([])
-  } finally {
-    setGmailLoading(false)
+    setGmailLoading(true)
+    try {
+      const res = await fetch(`/api/gmail/list?userId=${uid}&t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      })
+      if (res.status === 401) { setGmailMessages([]); return }
+      const data = await res.json()
+      setGmailMessages(data.messages || [])
+    } catch {
+      setGmailMessages([])
+    } finally {
+      setGmailLoading(false)
+    }
   }
-}
 
   async function loadWeek(uid: string) {
     const monday = getMonday()
@@ -166,7 +167,6 @@ export default function CalendrierPage() {
       .eq('is_done', false)
       .order('scheduled_at', { ascending: true })
 
-    // Charger les "occurrences" terminées/ignorées pour la semaine
     const { data: occurrences } = await supabase.from('task_occurrences')
       .select('*')
       .in('occurrence_date', dateStrs)
@@ -181,14 +181,12 @@ export default function CalendrierPage() {
 
     ;(allTasks || []).forEach((t: any) => {
       if (!t.scheduled_at) {
-        // Sans planification ET sans récurrence → tâches à planifier
         if (!t.recurrence) stillUnplanned.push(t)
         return
       }
 
       const baseDt = new Date(t.scheduled_at)
 
-      // Tâche récurrente : générer les occurrences pour chaque jour de la semaine
       if (t.recurrence) {
         dates.forEach((targetDate, dayIdx) => {
           if (!recurrenceMatches(t.recurrence, baseDt, targetDate)) return
@@ -215,7 +213,6 @@ export default function CalendrierPage() {
         return
       }
 
-      // Tâche non récurrente : afficher uniquement à sa date
       const dayIdx = dateStrs.findIndex(ds => t.scheduled_at.startsWith(ds))
       if (dayIdx >= 0) {
         tasksByDay[dayIdx].push({
@@ -299,20 +296,6 @@ export default function CalendrierPage() {
     }).eq('id', taskId)
   }
 
-  async function removeFromCalendar(t: any) {
-    // Si récurrente : on marque cette occurrence seulement comme "skipped"
-    if (t.isRecurring && t.occurrenceDate) {
-      await supabase.from('task_occurrences').upsert({
-        task_id: t.id,
-        occurrence_date: t.occurrenceDate,
-        is_skipped: true,
-      }, { onConflict: 'task_id,occurrence_date' })
-    } else {
-      await supabase.from('tasks').update({ scheduled_at: null }).eq('id', t.id)
-    }
-    loadWeek(user.id)
-  }
-
   async function createTaskInDay(dayIdx: number) {
     if (!newTitle.trim() || !user) return
     const [hh, mm] = newTime.split(':').map(Number)
@@ -364,7 +347,6 @@ export default function CalendrierPage() {
   }
 
   async function openEditTask(taskId: string) {
-    // On va chercher la tâche complète en DB (pour avoir tous les champs)
     const { data: t } = await supabase.from('tasks')
       .select('*, category:categories(id,name,color)')
       .eq('id', taskId).single()
@@ -385,7 +367,10 @@ export default function CalendrierPage() {
       date: dateStr,
       time: timeStr,
       recurrence: t.recurrence || '',
+      notes: t.notes || '',
+      subtasks: Array.isArray(t.subtasks) ? t.subtasks : [],
     })
+    setNewSubtask('')
   }
 
   async function saveEditedTask() {
@@ -404,7 +389,6 @@ export default function CalendrierPage() {
       scheduledAt = d.toISOString()
     }
 
-    // Si on change la récurrence, on nettoie les anciennes occurrences "skipped"
     if (editForm.recurrence !== editTask.recurrence) {
       await supabase.from('task_occurrences').delete().eq('task_id', editTask.id)
     }
@@ -415,6 +399,8 @@ export default function CalendrierPage() {
       estimated_duration: editForm.dur + ' min',
       scheduled_at: scheduledAt,
       recurrence: editForm.recurrence || null,
+      notes: editForm.notes || null,
+      subtasks: editForm.subtasks,
     }).eq('id', editTask.id)
 
     setEditTask(null)
@@ -428,9 +414,39 @@ export default function CalendrierPage() {
     loadWeek(user.id)
   }
 
+  function addSubtask() {
+    if (!newSubtask.trim()) return
+    setEditForm({
+      ...editForm,
+      subtasks: [...editForm.subtasks, { id: uid(), text: newSubtask.trim(), done: false }],
+    })
+    setNewSubtask('')
+  }
+
+  function toggleSubtask(id: string) {
+    setEditForm({
+      ...editForm,
+      subtasks: editForm.subtasks.map(s => s.id === id ? { ...s, done: !s.done } : s),
+    })
+  }
+
+  function deleteSubtask(id: string) {
+    setEditForm({
+      ...editForm,
+      subtasks: editForm.subtasks.filter(s => s.id !== id),
+    })
+  }
+
+  function updateSubtaskText(id: string, text: string) {
+    setEditForm({
+      ...editForm,
+      subtasks: editForm.subtasks.map(s => s.id === id ? { ...s, text } : s),
+    })
+  }
+
   function getMinFromY(y: number, offsetY = 0) {
-  return Math.max(6*60, Math.min(19*60+55, snap5(6*60 + (y - offsetY) / PPM)))
-}
+    return Math.max(6*60, Math.min(19*60+55, snap5(6*60 + (y - offsetY) / PPM)))
+  }
 
   function onWeekTaskDragStart(e: React.DragEvent, task: any, fromDay: number) {
     dragWeekTask.current = task
@@ -520,9 +536,8 @@ export default function CalendrierPage() {
     const t = dragWeekTask.current
     if (!t) return
 
-    // On n'autorise pas le drag des tâches récurrentes (elles ont une heure fixe)
     if (t.isRecurring) {
-      alert('Pour modifier une tâche récurrente, utilisez le bouton « Modifier » (crayon).')
+      alert('Pour modifier une tâche récurrente, cliquez dessus pour ouvrir le popup.')
       dragWeekTask.current = null
       dragWeekFromDay.current = null
       return
@@ -556,6 +571,8 @@ export default function CalendrierPage() {
       <div style={{ fontSize:'13px', color:'#aaa' }}>Chargement...</div>
     </div>
   )
+
+  const subtasksDoneCount = editForm.subtasks.filter(s => s.done).length
 
   return (
     <div style={{ display:'flex', minHeight:'100vh' }}>
@@ -685,12 +702,12 @@ export default function CalendrierPage() {
 
             <div style={{ display:'flex', position:'relative' }}>
               <div style={{ width:'48px', flexShrink:0, borderRight:'0.5px solid rgba(0,0,0,0.08)' }}>
-  {HOURS.map(h => (
-    <div key={h} style={{ height:`${PPH}px`, borderBottom:'0.5px solid rgba(0,0,0,0.05)', display:'flex', alignItems:'flex-start', justifyContent:'flex-end', padding:'0 6px 0 0', fontSize:'11px', color:'#bbb' }}>
-  {h}:00
-</div>
-  ))}
-</div>
+                {HOURS.map(h => (
+                  <div key={h} style={{ height:`${PPH}px`, borderBottom:'0.5px solid rgba(0,0,0,0.05)', display:'flex', alignItems:'flex-start', justifyContent:'flex-end', padding:'0 6px 0 0', fontSize:'11px', color:'#bbb' }}>
+                    {h}:00
+                  </div>
+                ))}
+              </div>
 
               {JOURS_LONG.map((_, dayIdx) => {
                 const dayTasks = weekTasks[dayIdx] || []
@@ -729,27 +746,16 @@ export default function CalendrierPage() {
                       const top = (t.timeMin - 6*60) * PPM
                       const height = Math.max(t.dur * PPM, 20)
                       return (
-                        <div key={`t-${t.id}-${t.occurrenceDate || ''}-${idx}`} draggable={!t.isRecurring}
+                        <div key={`t-${t.id}-${t.occurrenceDate || ''}-${idx}`}
+                          draggable={!t.isRecurring}
                           onDragStart={e => onWeekTaskDragStart(e, t, dayIdx)}
-                          style={{ position:'absolute', left:'3px', right:'3px', top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 32px 3px 5px', overflow:'hidden', zIndex:3, cursor: t.isRecurring ? 'default' : 'grab', background:'#EAF3DE', color:'#27500A', borderLeft:`3px solid ${t.color || '#3B6D11'}` }}>
+                          onClick={() => openEditTask(t.id)}
+                          title="Cliquer pour modifier"
+                          style={{ position:'absolute', left:'3px', right:'3px', top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 5px', overflow:'hidden', zIndex:3, cursor: t.isRecurring ? 'pointer' : 'grab', background:'#EAF3DE', color:'#27500A', borderLeft:`3px solid ${t.color || '#3B6D11'}` }}>
                           <div style={{ fontSize:'10px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
                             {t.isRecurring && '🔁 '}{t.gmail_message_id && '📧 '}{t.title.split('\n')[0]}
                           </div>
                           <div style={{ fontSize:'9px', opacity:0.7, marginTop:'1px' }}>{minToStr(t.timeMin)}</div>
-                          <div onClick={ev => { ev.stopPropagation(); openEditTask(t.id) }}
-                            title="Modifier"
-                            style={{ position:'absolute', top:'2px', right:'18px', width:'14px', height:'14px', borderRadius:'50%', background:'rgba(0,0,0,0.1)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:'#27500A', opacity:0.6 }}
-                            onMouseEnter={ev => (ev.currentTarget as HTMLElement).style.opacity='1'}
-                            onMouseLeave={ev => (ev.currentTarget as HTMLElement).style.opacity='0.6'}>
-                            <svg width="8" height="8" viewBox="0 0 24 24" fill="none"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="#27500A" strokeWidth="2" strokeLinecap="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="#27500A" strokeWidth="2" strokeLinecap="round"/></svg>
-                          </div>
-                          <div onClick={ev => { ev.stopPropagation(); removeFromCalendar(t) }}
-                            title={t.isRecurring ? "Ignorer cette occurrence" : "Retirer du calendrier"}
-                            style={{ position:'absolute', top:'2px', right:'3px', width:'14px', height:'14px', borderRadius:'50%', background:'rgba(0,0,0,0.1)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'10px', lineHeight:'1', color:'#27500A', opacity:0.6 }}
-                            onMouseEnter={ev => (ev.currentTarget as HTMLElement).style.opacity='1'}
-                            onMouseLeave={ev => (ev.currentTarget as HTMLElement).style.opacity='0.6'}>
-                            ×
-                          </div>
                         </div>
                       )
                     })}
@@ -787,7 +793,7 @@ export default function CalendrierPage() {
                   )}
                   {unplanned.map((t: any) => (
                     <div key={t.id} draggable onDragStart={e => onWeekUnplannedDragStart(e, t)}
-                      style={{ background:'white', border:'0.5px solid rgba(0,0,0,0.1)', borderLeft:`3px solid ${t.category?.color || '#3B6D11'}`, borderRadius:'8px', padding:'9px 12px 9px 12px', cursor:'grab', userSelect:'none', position:'relative' }}>
+                      style={{ background:'white', border:'0.5px solid rgba(0,0,0,0.1)', borderLeft:`3px solid ${t.category?.color || '#3B6D11'}`, borderRadius:'8px', padding:'9px 12px', cursor:'grab', userSelect:'none', position:'relative' }}>
                       <div style={{ fontSize:'12px', fontWeight:'500', color:'#111', paddingRight:'24px' }}>{t.description.split('\n')[0]}</div>
                       <div style={{ fontSize:'11px', color:'#aaa', marginTop:'3px', display:'flex', gap:'8px' }}>
                         <span>{t.category?.name || '–'}</span>
@@ -890,12 +896,12 @@ export default function CalendrierPage() {
         </div>
       )}
 
-      {/* Popup d'édition de tâche */}
+      {/* Popup d'édition de tâche — avec Notes et Sous-tâches */}
       {editTask && (
         <div onClick={() => setEditTask(null)}
           style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200 }}>
           <div onClick={e => e.stopPropagation()}
-            style={{ background:'white', borderRadius:'12px', padding:'1.25rem', width:'460px', maxWidth:'90vw', boxShadow:'0 20px 60px rgba(0,0,0,0.3)' }}>
+            style={{ background:'white', borderRadius:'12px', padding:'1.25rem', width:'520px', maxWidth:'92vw', maxHeight:'90vh', overflowY:'auto', boxShadow:'0 20px 60px rgba(0,0,0,0.3)' }}>
             <h3 style={{ fontSize:'14px', fontWeight:'500', marginBottom:'14px' }}>Modifier la tâche</h3>
 
             <div style={{ marginBottom:'10px' }}>
@@ -942,16 +948,52 @@ export default function CalendrierPage() {
                 style={{ width:'100%', padding:'7px 8px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none', background: editForm.date ? 'white' : '#f9f9f7' }}>
                 {RECURRENCES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
               </select>
-              {!editForm.date && (
-                <div style={{ fontSize:'10px', color:'#aaa', marginTop:'4px' }}>
-                  Une date doit être définie pour activer la récurrence.
+            </div>
+
+            {/* Notes */}
+            <div style={{ marginBottom:'14px' }}>
+              <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'4px' }}>📝 Notes</label>
+              <textarea value={editForm.notes} onChange={e => setEditForm({...editForm, notes: e.target.value})}
+                placeholder="Ajouter des notes..."
+                rows={3}
+                style={{ width:'100%', padding:'8px 10px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none', resize:'vertical', fontFamily:'inherit' }} />
+            </div>
+
+            {/* Sous-tâches */}
+            <div style={{ marginBottom:'14px' }}>
+              <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'6px' }}>
+                ✅ Sous-tâches {editForm.subtasks.length > 0 && <span style={{ color:'#aaa' }}>({subtasksDoneCount}/{editForm.subtasks.length})</span>}
+              </label>
+              {editForm.subtasks.length > 0 && (
+                <div style={{ display:'flex', flexDirection:'column', gap:'4px', marginBottom:'6px' }}>
+                  {editForm.subtasks.map(s => (
+                    <div key={s.id} style={{ display:'flex', alignItems:'center', gap:'6px', background:'#f9f9f7', border:'0.5px solid rgba(0,0,0,0.08)', borderRadius:'6px', padding:'6px 8px' }}>
+                      <div onClick={() => toggleSubtask(s.id)}
+                        style={{ width:'15px', height:'15px', borderRadius:'50%', border: s.done ? 'none' : '1.5px solid rgba(0,0,0,0.2)', background: s.done ? '#3B6D11' : 'transparent', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                        {s.done && <svg width="9" height="9" viewBox="0 0 12 12"><polyline points="2,6 5,9 10,3" stroke="white" strokeWidth="1.8" fill="none" strokeLinecap="round"/></svg>}
+                      </div>
+                      <input value={s.text} onChange={e => updateSubtaskText(s.id, e.target.value)}
+                        style={{ flex:1, border:'none', background:'transparent', fontSize:'12px', outline:'none', textDecoration: s.done ? 'line-through' : 'none', color: s.done ? '#aaa' : '#111' }} />
+                      <div onClick={() => deleteSubtask(s.id)}
+                        style={{ cursor:'pointer', color:'#aaa', fontSize:'14px', lineHeight:'1', padding:'0 4px' }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.color='#A32D2D'}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.color='#aaa'}>
+                        ×
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
-              {editForm.recurrence && (
-                <div style={{ fontSize:'10px', color:'#3B6D11', marginTop:'4px' }}>
-                  La tâche se répétera automatiquement selon cette fréquence.
-                </div>
-              )}
+              <div style={{ display:'flex', gap:'4px' }}>
+                <input value={newSubtask} onChange={e => setNewSubtask(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addSubtask() } }}
+                  placeholder="Ajouter une sous-tâche..."
+                  style={{ flex:1, padding:'6px 8px', fontSize:'12px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none' }} />
+                <button onClick={addSubtask}
+                  style={{ padding:'6px 12px', fontSize:'12px', background:'#F2E000', border:'none', borderRadius:'6px', fontWeight:'500', cursor:'pointer' }}>
+                  +
+                </button>
+              </div>
             </div>
 
             <div style={{ display:'flex', gap:'8px', justifyContent:'space-between', alignItems:'center' }}>
