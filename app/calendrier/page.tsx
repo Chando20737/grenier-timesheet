@@ -572,69 +572,121 @@ export default function CalendrierPage() {
         )}
 
         {/* === VUE SEMAINE === */}
-        {view === 'semaine' && (
-          <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
-            {/* 5 colonnes Lun-Ven */}
-            <div style={{ flex:1, display:'flex', overflow:'auto', background:'#f5f4f0' }}>
-              {JOURS_LONG.map((jour, dayIdx) => {
-                const d = getDateForDay(dayIdx)
-                const ds = d.toISOString().split('T')[0]
-                const isToday = ds === todayStr
-                const dayTasks = weekTasks[dayIdx] || []
-                const dayGoogle = weekGoogle[dayIdx] || []
-                // Combiner et trier par heure
-                const combined = [
-                  ...dayTasks.map(t => ({ ...t, kind: 'task' })),
-                  ...dayGoogle.map(t => ({ ...t, kind: 'google' })),
-                ].sort((a,b) => a.timeMin - b.timeMin)
+{view === 'semaine' && (
+  <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
+    {/* Zone scrollable contenant la colonne d'heures + les 5 colonnes */}
+    <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'auto', background:'white' }}>
+      {/* En-têtes de jours (sticky en haut) */}
+      <div style={{ display:'flex', position:'sticky', top:0, background:'white', zIndex:5, borderBottom:'0.5px solid rgba(0,0,0,0.08)' }}>
+        <div style={{ width:'48px', flexShrink:0, borderRight:'0.5px solid rgba(0,0,0,0.08)' }} />
+        {JOURS_LONG.map((jour, dayIdx) => {
+          const d = getDateForDay(dayIdx)
+          const ds = d.toISOString().split('T')[0]
+          const isToday = ds === todayStr
+          return (
+            <div key={dayIdx}
+              style={{ flex:1, minWidth:'160px', padding:'10px 12px', borderRight: dayIdx < 4 ? '0.5px solid rgba(0,0,0,0.08)' : 'none' }}>
+              <div style={{ fontSize:'13px', fontWeight:'500', color: isToday ? '#3B6D11' : '#111' }}>{jour}</div>
+              <div style={{ fontSize:'11px', color:'#888', marginTop:'2px' }}>{d.getDate()} {MOIS[d.getMonth()]}</div>
+            </div>
+          )
+        })}
+      </div>
 
-                const isOver = dragOverDay === dayIdx
+      {/* Grille horaire */}
+      <div style={{ display:'flex', position:'relative' }}>
+        {/* Colonne des heures à gauche */}
+        <div style={{ width:'48px', flexShrink:0, borderRight:'0.5px solid rgba(0,0,0,0.08)' }}>
+          <div style={{ height:'8px' }} />
+          {HOURS.map(h => (
+            <div key={h} style={{ height:`${PPH}px`, borderBottom:'0.5px solid rgba(0,0,0,0.05)', display:'flex', alignItems:'flex-start', justifyContent:'flex-end', padding:'3px 6px 0 0', fontSize:'11px', color:'#bbb' }}>
+              {h}:00
+            </div>
+          ))}
+        </div>
 
+        {/* 5 colonnes Lun-Ven avec grille horaire */}
+        {JOURS_LONG.map((_, dayIdx) => {
+          const dayTasks = weekTasks[dayIdx] || []
+          const dayGoogle = weekGoogle[dayIdx] || []
+          const isOver = dragOverDay === dayIdx
+
+          return (
+            <div key={dayIdx}
+              onDragOver={e => onColDragOver(e, dayIdx)}
+              onDragLeave={onColDragLeave}
+              onDrop={e => onColDrop(e, dayIdx)}
+              style={{ flex:1, minWidth:'160px', position:'relative', height: HOURS.length*PPH+'px', borderRight: dayIdx < 4 ? '0.5px solid rgba(0,0,0,0.08)' : 'none', background: isOver ? 'rgba(242,224,0,0.08)' : 'transparent', transition:'background 0.1s' }}>
+              {/* Lignes d'heures */}
+              {HOURS.map((h,i) => (
+                <div key={h}>
+                  <div style={{ position:'absolute', left:0, right:0, top:i*PPH, borderBottom:'0.5px solid rgba(0,0,0,0.06)' }} />
+                  <div style={{ position:'absolute', left:0, right:0, top:i*PPH+30, borderBottom:'0.5px dashed rgba(0,0,0,0.04)' }} />
+                </div>
+              ))}
+
+              {/* Événements Google (lecture seule) */}
+              {dayGoogle.map((t, idx) => {
+                const top = (t.timeMin - 8*60) * PPM
+                const height = Math.max(t.dur * PPM, 20)
                 return (
-                  <div key={dayIdx}
-                    onDragOver={e => onColDragOver(e, dayIdx)}
-                    onDragLeave={onColDragLeave}
-                    onDrop={e => onColDrop(e, dayIdx)}
-                    style={{ flex:1, minWidth:'200px', display:'flex', flexDirection:'column', borderRight: dayIdx < 4 ? '0.5px solid rgba(0,0,0,0.08)' : 'none', background: isOver ? 'rgba(242,224,0,0.08)' : 'transparent', transition:'background 0.1s' }}>
-                    <div style={{ padding:'12px 14px', borderBottom:'0.5px solid rgba(0,0,0,0.08)', background:'white' }}>
-                      <div style={{ fontSize:'14px', fontWeight:'500', color: isToday ? '#3B6D11' : '#111' }}>{jour}</div>
-                      <div style={{ fontSize:'11px', color:'#888', marginTop:'2px' }}>{d.getDate()} {MOIS[d.getMonth()]}</div>
-                    </div>
+                  <div key={`g-${t.id}-${idx}`}
+                    style={{ position:'absolute', left:'3px', right:'3px', top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 5px', overflow:'hidden', zIndex:2, background:'#E6F1FB', color:'#0C447C', borderLeft:'3px solid #185FA5' }}>
+                    <div style={{ fontSize:'10px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}</div>
+                    <div style={{ fontSize:'9px', opacity:0.7, marginTop:'1px' }}>{minToStr(t.timeMin)}</div>
+                  </div>
+                )
+              })}
 
-                    <div style={{ flex:1, padding:'8px', display:'flex', flexDirection:'column', gap:'6px', overflowY:'auto' }}>
-                      {combined.length === 0 && (
-                        <div style={{ textAlign:'center', fontSize:'11px', color:'#bbb', padding:'1rem 0' }}>—</div>
-                      )}
-                      {combined.map((item, i) => {
-                        if (item.kind === 'google') {
-                          return (
-                            <div key={`g-${item.id}-${i}`}
-                              style={{ background:'#E6F1FB', borderLeft:'3px solid #185FA5', borderRadius:'6px', padding:'7px 9px', fontSize:'12px', color:'#0C447C' }}>
-                              <div style={{ fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{item.title}</div>
-                              <div style={{ fontSize:'10px', opacity:0.7, marginTop:'2px' }}>{minToStr(item.timeMin)} – {minToStr(item.timeMin+item.dur)}</div>
-                            </div>
-                          )
-                        }
-                        return (
-                          <div key={`t-${item.id}-${i}`} draggable
-                            onDragStart={e => onWeekTaskDragStart(e, item, dayIdx)}
-                            style={{ background:'white', borderLeft:`3px solid ${item.color || '#3B6D11'}`, border:'0.5px solid rgba(0,0,0,0.08)', borderLeftWidth:'3px', borderRadius:'6px', padding:'7px 9px', fontSize:'12px', cursor:'grab', position:'relative' }}>
-                            <div style={{ fontWeight:'500', color:'#111', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', paddingRight:'18px' }}>{item.title}</div>
-                            <div style={{ fontSize:'10px', color:'#888', marginTop:'2px', display:'flex', gap:'6px' }}>
-                              <span>{minToStr(item.timeMin)}</span>
-                              {item.category && <span>· {item.category}</span>}
-                              <span>· {item.dur}min</span>
-                            </div>
-                            <div onClick={e => { e.stopPropagation(); removeFromCalendar(item.id) }}
-                              style={{ position:'absolute', top:'5px', right:'5px', width:'14px', height:'14px', borderRadius:'50%', background:'rgba(0,0,0,0.08)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'10px', color:'#666' }}>
-                              ×
-                            </div>
-                          </div>
-                        )
-                      })}
+              {/* Tâches placées (draggables) */}
+              {dayTasks.map((t, idx) => {
+                const top = (t.timeMin - 8*60) * PPM
+                const height = Math.max(t.dur * PPM, 20)
+                return (
+                  <div key={`t-${t.id}-${idx}`} draggable
+                    onDragStart={e => onWeekTaskDragStart(e, t, dayIdx)}
+                    style={{ position:'absolute', left:'3px', right:'3px', top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 18px 3px 5px', overflow:'hidden', zIndex:3, cursor:'grab', background:'#EAF3DE', color:'#27500A', borderLeft:`3px solid ${t.color || '#3B6D11'}` }}>
+                    <div style={{ fontSize:'10px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}</div>
+                    <div style={{ fontSize:'9px', opacity:0.7, marginTop:'1px' }}>{minToStr(t.timeMin)}</div>
+                    <div onClick={e => { e.stopPropagation(); removeFromCalendar(t.id) }}
+                      style={{ position:'absolute', top:'2px', right:'3px', width:'14px', height:'14px', borderRadius:'50%', background:'rgba(0,0,0,0.1)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'10px', lineHeight:'1', color:'#27500A', opacity:0.6 }}
+                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity='1'}
+                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity='0.6'}>
+                      ×
                     </div>
                   </div>
                 )
+              })}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+
+    {/* Tâches à planifier (vue semaine) */}
+    <div style={{ width:'280px', flexShrink:0, background:'#f9f9f7', display:'flex', flexDirection:'column', borderLeft:'0.5px solid rgba(0,0,0,0.1)', overflowY:'auto' }}>
+      <div style={{ padding:'10px 12px', borderBottom:'0.5px solid rgba(0,0,0,0.08)', fontSize:'10px', fontWeight:'500', color:'#777', textTransform:'uppercase', letterSpacing:'0.5px', background:'white' }}>
+        Tâches à planifier
+      </div>
+      <div style={{ padding:'8px', display:'flex', flexDirection:'column', gap:'6px' }}>
+        {unplanned.length === 0 && (
+          <div style={{ textAlign:'center', fontSize:'11px', color:'#aaa', padding:'1.5rem' }}>Toutes les tâches sont planifiées !</div>
+        )}
+        {unplanned.map((t: any) => (
+          <div key={t.id} draggable onDragStart={e => onWeekUnplannedDragStart(e, t)}
+            style={{ background:'white', border:'0.5px solid rgba(0,0,0,0.1)', borderLeft:`3px solid ${t.category?.color || '#3B6D11'}`, borderRadius:'8px', padding:'9px 12px', cursor:'grab', userSelect:'none' }}>
+            <div style={{ fontSize:'12px', fontWeight:'500', color:'#111' }}>{t.description}</div>
+            <div style={{ fontSize:'11px', color:'#aaa', marginTop:'3px', display:'flex', gap:'8px' }}>
+              <span>{t.category?.name || '–'}</span>
+              {t.estimated_duration && <span>⏱ {t.estimated_duration}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize:'11px', color:'#ccc', textAlign:'center', padding:'8px' }}>← Glissez une tâche vers un jour</div>
+    </div>
+  </div>
+)}
               })}
             </div>
 
