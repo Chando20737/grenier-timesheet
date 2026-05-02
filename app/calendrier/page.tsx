@@ -136,18 +136,21 @@ export default function CalendrierPage() {
   }
 
   async function loadGmail(uid: string) {
-    setGmailLoading(true)
-    try {
-      const res = await fetch(`/api/gmail/list?userId=${uid}`)
-      if (res.status === 401) { setGmailMessages([]); return }
-      const data = await res.json()
-      setGmailMessages(data.messages || [])
-    } catch {
-      setGmailMessages([])
-    } finally {
-      setGmailLoading(false)
-    }
+  setGmailLoading(true)
+  try {
+    const res = await fetch(`/api/gmail/list?userId=${uid}&t=${Date.now()}`, {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' },
+    })
+    if (res.status === 401) { setGmailMessages([]); return }
+    const data = await res.json()
+    setGmailMessages(data.messages || [])
+  } catch {
+    setGmailMessages([])
+  } finally {
+    setGmailLoading(false)
   }
+}
 
   async function loadWeek(uid: string) {
     const monday = getMonday()
