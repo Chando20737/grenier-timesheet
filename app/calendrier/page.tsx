@@ -57,7 +57,7 @@ export default function CalendrierPage() {
   const [gmailLoading, setGmailLoading] = useState(false)
 
   // Formulaire création de tâche
-  const [showAddForm, setShowAddForm] = useState<number | null>(null) // dayIdx où le formulaire est ouvert
+  const [showAddForm, setShowAddForm] = useState<number | null>(null)
   const [newTitle, setNewTitle] = useState('')
   const [newTime, setNewTime] = useState('09:00')
   const [newDur, setNewDur] = useState('60')
@@ -65,6 +65,7 @@ export default function CalendrierPage() {
 
   // Popup drag courriel
   const [dropEmailModal, setDropEmailModal] = useState<{ message: any, dayIdx: number } | null>(null)
+  const [emailForm, setEmailForm] = useState({ title: '', time: '09:00', dur: '30', cat: '', includeLink: true })
 
   const areaRef = useRef<HTMLDivElement>(null)
   const dragTask = useRef<any>(null)
@@ -101,7 +102,6 @@ export default function CalendrierPage() {
     }
   }, [user, weekOffset, selectedDay, view])
 
-  // Charger Gmail quand l'onglet est ouvert pour la première fois
   useEffect(() => {
     if (sidePanel === 'gmail' && user && gmailMessages.length === 0 && !gmailLoading) {
       loadGmail(user.id)
@@ -285,7 +285,6 @@ export default function CalendrierPage() {
     else loadWeek(user.id)
   }
 
-  // Création d'une nouvelle tâche dans une journée
   async function createTaskInDay(dayIdx: number) {
     if (!newTitle.trim() || !user) return
     const [hh, mm] = newTime.split(':').map(Number)
@@ -304,21 +303,23 @@ export default function CalendrierPage() {
     loadWeek(user.id)
   }
 
-  // Création tâche depuis un courriel
-  async function createTaskFromEmail(message: any, dayIdx: number, withLink: boolean) {
-    if (!user) return
-    let description = message.subject
-    if (withLink) {
+  async function createTaskFromEmail() {
+    if (!user || !dropEmailModal || !emailForm.title.trim()) return
+    const { message, dayIdx } = dropEmailModal
+    let description = emailForm.title.trim()
+    if (emailForm.includeLink) {
       const link = `https://mail.google.com/mail/u/0/#inbox/${message.id}`
-      description = `${message.subject}\n\n📧 ${link}`
+      description = `${description}\n\n📧 ${link}`
     }
+    const [hh, mm] = emailForm.time.split(':').map(Number)
     const d = getDateForDay(dayIdx)
-    d.setHours(9, 0, 0, 0)
+    d.setHours(hh, mm, 0, 0)
     await supabase.from('tasks').insert({
       user_id: user.id,
       description,
       scheduled_at: d.toISOString(),
-      estimated_duration: '30 min',
+      estimated_duration: emailForm.dur + ' min',
+      category_id: emailForm.cat || null,
       source: 'gmail',
       gmail_message_id: message.id,
     })
@@ -446,9 +447,17 @@ export default function CalendrierPage() {
     e.preventDefault()
     setDragOverDay(null)
 
-    // Cas 1 : drop d'un courriel → ouvrir popup
+    // Cas 1 : drop d'un courriel → ouvrir popup avec formulaire pré-rempli
     if (dragEmail.current) {
-      setDropEmailModal({ message: dragEmail.current, dayIdx })
+      const msg = dragEmail.current
+      setEmailForm({
+        title: msg.subject || '(Sans sujet)',
+        time: '09:00',
+        dur: '30',
+        cat: categories[0]?.id || '',
+        includeLink: true,
+      })
+      setDropEmailModal({ message: msg, dayIdx })
       dragEmail.current = null
       return
     }
@@ -682,7 +691,7 @@ export default function CalendrierPage() {
         {view === 'semaine' && (
           <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
             <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'auto', background:'white' }}>
-              {/* En-têtes (sticky) avec bouton + Ajouter tâche */}
+              {/* En-têtes (sticky) */}
               <div style={{ display:'flex', position:'sticky', top:0, background:'white', zIndex:5, borderBottom:'0.5px solid rgba(0,0,0,0.08)' }}>
                 <div style={{ width:'48px', flexShrink:0, borderRight:'0.5px solid rgba(0,0,0,0.08)' }} />
                 {JOURS_LONG.map((jour, dayIdx) => {
@@ -695,7 +704,6 @@ export default function CalendrierPage() {
                       <div style={{ fontSize:'13px', fontWeight:'500', color: isToday ? '#3B6D11' : '#111' }}>{jour}</div>
                       <div style={{ fontSize:'11px', color:'#888', marginTop:'2px' }}>{d.getDate()} {MOIS[d.getMonth()]}</div>
 
-                      {/* Bouton + Ajouter tâche / formulaire inline */}
                       {showAddForm === dayIdx ? (
                         <div style={{ marginTop:'8px', background:'#f9f9f7', border:'0.5px solid rgba(0,0,0,0.1)', borderRadius:'6px', padding:'8px' }}>
                           <input autoFocus value={newTitle} onChange={e => setNewTitle(e.target.value)}
@@ -805,7 +813,6 @@ export default function CalendrierPage() {
 
             {/* Panneau droit avec onglets */}
             <div style={{ width:'320px', flexShrink:0, background:'#f9f9f7', display:'flex', flexDirection:'column', borderLeft:'0.5px solid rgba(0,0,0,0.1)' }}>
-              {/* Onglets */}
               <div style={{ display:'flex', background:'white', borderBottom:'0.5px solid rgba(0,0,0,0.08)' }}>
                 <button onClick={() => setSidePanel('tasks')}
                   style={{ flex:1, padding:'10px', fontSize:'11px', fontWeight:'500', textTransform:'uppercase', letterSpacing:'0.5px', border:'none', background: sidePanel==='tasks' ? '#f9f9f7' : 'transparent', color: sidePanel==='tasks' ? '#111' : '#888', borderBottom: sidePanel==='tasks' ? '2px solid #F2E000' : '2px solid transparent', cursor:'pointer' }}>
@@ -817,7 +824,6 @@ export default function CalendrierPage() {
                 </button>
               </div>
 
-              {/* Contenu de l'onglet actif */}
               <div style={{ flex:1, overflowY:'auto' }}>
                 {sidePanel === 'tasks' && (
                   <div style={{ padding:'8px', display:'flex', flexDirection:'column', gap:'6px' }}>
@@ -861,31 +867,62 @@ export default function CalendrierPage() {
         )}
       </div>
 
-      {/* Popup drop courriel */}
+      {/* Popup drop courriel — formulaire complet */}
       {dropEmailModal && (
         <div onClick={() => setDropEmailModal(null)}
           style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200 }}>
           <div onClick={e => e.stopPropagation()}
-            style={{ background:'white', borderRadius:'12px', padding:'1.25rem', width:'400px', maxWidth:'90vw', boxShadow:'0 20px 60px rgba(0,0,0,0.3)' }}>
-            <h3 style={{ fontSize:'14px', fontWeight:'500', marginBottom:'8px' }}>Créer une tâche depuis ce courriel</h3>
-            <div style={{ background:'#f9f9f7', border:'0.5px solid rgba(0,0,0,0.08)', borderRadius:'6px', padding:'10px', marginBottom:'14px' }}>
-              <div style={{ fontSize:'11px', color:'#888' }}>{formatFrom(dropEmailModal.message.from)}</div>
-              <div style={{ fontSize:'13px', fontWeight:'500', color:'#111', marginTop:'2px' }}>{dropEmailModal.message.subject}</div>
+            style={{ background:'white', borderRadius:'12px', padding:'1.25rem', width:'440px', maxWidth:'90vw', boxShadow:'0 20px 60px rgba(0,0,0,0.3)' }}>
+            <h3 style={{ fontSize:'14px', fontWeight:'500', marginBottom:'4px' }}>Créer une tâche depuis ce courriel</h3>
+            <div style={{ fontSize:'11px', color:'#888', marginBottom:'12px' }}>
+              De : {formatFrom(dropEmailModal.message.from)}
             </div>
-            <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
-              <button onClick={() => createTaskFromEmail(dropEmailModal.message, dropEmailModal.dayIdx, false)}
-                style={{ padding:'10px', background:'#F2E000', border:'none', borderRadius:'8px', fontSize:'13px', fontWeight:'500', cursor:'pointer', textAlign:'left' }}>
-                Sujet seulement
-                <div style={{ fontSize:'11px', fontWeight:'400', color:'rgba(0,0,0,0.6)', marginTop:'2px' }}>Crée une tâche avec le titre du courriel</div>
-              </button>
-              <button onClick={() => createTaskFromEmail(dropEmailModal.message, dropEmailModal.dayIdx, true)}
-                style={{ padding:'10px', background:'white', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', fontSize:'13px', fontWeight:'500', cursor:'pointer', textAlign:'left' }}>
-                Sujet + lien vers le courriel
-                <div style={{ fontSize:'11px', fontWeight:'400', color:'#888', marginTop:'2px' }}>Inclut un lien pour ouvrir le courriel dans Gmail</div>
-              </button>
+
+            <div style={{ marginBottom:'10px' }}>
+              <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'4px' }}>Titre</label>
+              <input autoFocus value={emailForm.title}
+                onChange={e => setEmailForm({...emailForm, title: e.target.value})}
+                style={{ width:'100%', padding:'8px 10px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none' }} />
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'8px', marginBottom:'10px' }}>
+              <div>
+                <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'4px' }}>Heure</label>
+                <input type="time" value={emailForm.time}
+                  onChange={e => setEmailForm({...emailForm, time: e.target.value})}
+                  style={{ width:'100%', padding:'7px 8px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none' }} />
+              </div>
+              <div>
+                <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'4px' }}>Durée (min)</label>
+                <input type="number" value={emailForm.dur} min="5" step="5"
+                  onChange={e => setEmailForm({...emailForm, dur: e.target.value})}
+                  style={{ width:'100%', padding:'7px 8px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none' }} />
+              </div>
+              <div>
+                <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'4px' }}>Catégorie</label>
+                <select value={emailForm.cat}
+                  onChange={e => setEmailForm({...emailForm, cat: e.target.value})}
+                  style={{ width:'100%', padding:'7px 8px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none', background:'white' }}>
+                  <option value="">—</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <label style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'14px', cursor:'pointer', fontSize:'12px', color:'#555' }}>
+              <input type="checkbox" checked={emailForm.includeLink}
+                onChange={e => setEmailForm({...emailForm, includeLink: e.target.checked})} />
+              Inclure le lien vers le courriel dans la tâche
+            </label>
+
+            <div style={{ display:'flex', gap:'8px', justifyContent:'flex-end' }}>
               <button onClick={() => setDropEmailModal(null)}
-                style={{ padding:'8px', background:'transparent', border:'none', fontSize:'12px', color:'#888', cursor:'pointer' }}>
+                style={{ padding:'8px 14px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', background:'white', cursor:'pointer' }}>
                 Annuler
+              </button>
+              <button onClick={createTaskFromEmail}
+                style={{ padding:'8px 18px', fontSize:'13px', background:'#F2E000', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>
+                Créer la tâche
               </button>
             </div>
           </div>
