@@ -683,9 +683,9 @@ export default function CalendrierPage() {
             <div style={{ display:'flex', position:'relative' }}>
               <div style={{ width:'48px', flexShrink:0, borderRight:'0.5px solid rgba(0,0,0,0.08)' }}>
   {HOURS.map(h => (
-    <div key={h} style={{ height:`${PPH}px`, borderBottom:'0.5px solid rgba(0,0,0,0.05)', display:'flex', alignItems:'flex-start', justifyContent:'flex-end', padding:'0 6px 0 0', fontSize:'11px', color:'#bbb', transform:'translateY(-6px)' }}>
-      {h}:00
-    </div>
+    <div key={h} style={{ height:`${PPH}px`, borderBottom:'0.5px solid rgba(0,0,0,0.05)', display:'flex', alignItems:'flex-start', justifyContent:'flex-end', padding:'0 6px 0 0', fontSize:'11px', color:'#bbb' }}>
+  {h}:00
+</div>
   ))}
 </div>
 
