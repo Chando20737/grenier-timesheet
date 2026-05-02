@@ -18,6 +18,7 @@ export default function DashboardPage() {
   const [catId, setCatId] = useState('')
   const [showTaskList, setShowTaskList] = useState(false)
   const [running, setRunning] = useState(false)
+  const [paused, setPaused] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const [startTime, setStartTime] = useState<string | null>(null)
   const [date, setDate] = useState(new Date())
@@ -42,7 +43,6 @@ export default function DashboardPage() {
     })
   }, [])
 
-  // Fermer la liste de tâches si on clique ailleurs
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (taskWrapRef.current && !taskWrapRef.current.contains(e.target as Node)) {
@@ -77,20 +77,35 @@ export default function DashboardPage() {
     setShowTaskList(false)
   }
 
-  function toggleTimer() {
-    if (!running) {
-      setStartTime(new Date().toISOString())
-      setRunning(true)
-      interval.current = setInterval(() => setElapsed(e => e + 1), 1000)
-    } else {
-      clearInterval(interval.current)
-      setRunning(false)
-      saveEntry()
-    }
+  // ▶ Démarre ou reprend après pause
+  function startTimer() {
+    if (!startTime) setStartTime(new Date().toISOString())
+    setRunning(true)
+    setPaused(false)
+    interval.current = setInterval(() => setElapsed(e => e + 1), 1000)
+  }
+
+  // ⏸ Pause sans sauvegarder
+  function pauseTimer() {
+    clearInterval(interval.current)
+    setRunning(false)
+    setPaused(true)
+  }
+
+  // ⏹ Stop : sauvegarde l'entrée et réinitialise
+  async function stopTimer() {
+    clearInterval(interval.current)
+    setRunning(false)
+    setPaused(false)
+    await saveEntry()
   }
 
   async function saveEntry() {
-    if (!user || elapsed < 5) return
+    if (!user || elapsed < 5) {
+      // Si moins de 5 secondes, on réinitialise sans sauvegarder
+      setElapsed(0); setStartTime(null); setDescription('')
+      return
+    }
     const endTime = new Date().toISOString()
     await supabase.from('time_entries').insert({
       user_id: user.id,
@@ -125,7 +140,6 @@ export default function DashboardPage() {
     if (user) loadEntries(user.id, nd)
   }
 
-  // Filtrer les tâches selon ce qui est tapé
   const filteredTasks = description.trim()
     ? tasks.filter(t => t.description.toLowerCase().includes(description.toLowerCase()))
     : tasks
@@ -137,6 +151,9 @@ export default function DashboardPage() {
   const initials = user?.email?.split('@')[0].slice(0,2).toUpperCase() || 'ÉG'
   const isToday = date.toDateString() === new Date().toDateString()
   const dayLabel = isToday ? "Aujourd'hui" : date.getDate() + ' ' + date.toLocaleString('fr-CA', { month: 'short' })
+
+  // État du chrono : 'idle' | 'running' | 'paused'
+  const timerState = running ? 'running' : (paused ? 'paused' : 'idle')
 
   if (loading) return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#f5f4f0' }}>
@@ -215,13 +232,48 @@ export default function DashboardPage() {
               <option value="">Catégorie</option>
               {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
-            <span style={{ fontSize:'18px', fontWeight:'500', minWidth:'74px', textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{fmt(elapsed)}</span>
-            <button onClick={toggleTimer} style={{ width:'34px', height:'34px', borderRadius:'50%', background: running ? '#E24B4A' : '#F2E000', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
-              {running
-                ? <svg width="12" height="12" viewBox="0 0 12 12"><rect x="0" y="0" width="4" height="12" fill="white"/><rect x="8" y="0" width="4" height="12" fill="white"/></svg>
-                : <svg width="11" height="11" viewBox="0 0 10 12"><polygon points="0,0 10,6 0,12" fill="#111"/></svg>}
-            </button>
+            <span style={{ fontSize:'18px', fontWeight: timerState === 'paused' ? '400' : '500', minWidth:'74px', textAlign:'right', fontVariantNumeric:'tabular-nums', color: timerState === 'paused' ? '#aaa' : '#111' }}>{fmt(elapsed)}</span>
+
+            {/* Boutons selon l'état */}
+            {timerState === 'idle' && (
+              <button onClick={startTimer} title="Démarrer"
+                style={{ width:'34px', height:'34px', borderRadius:'50%', background:'#F2E000', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <svg width="11" height="11" viewBox="0 0 10 12"><polygon points="0,0 10,6 0,12" fill="#111"/></svg>
+              </button>
+            )}
+
+            {timerState === 'running' && (
+              <>
+                <button onClick={pauseTimer} title="Pause"
+                  style={{ width:'34px', height:'34px', borderRadius:'50%', background:'#F2E000', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <svg width="12" height="12" viewBox="0 0 12 12"><rect x="1" y="0" width="3.5" height="12" fill="#111"/><rect x="7.5" y="0" width="3.5" height="12" fill="#111"/></svg>
+                </button>
+                <button onClick={stopTimer} title="Arrêter et sauvegarder"
+                  style={{ width:'34px', height:'34px', borderRadius:'50%', background:'#E24B4A', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <svg width="11" height="11" viewBox="0 0 12 12"><rect x="0" y="0" width="12" height="12" fill="white"/></svg>
+                </button>
+              </>
+            )}
+
+            {timerState === 'paused' && (
+              <>
+                <button onClick={startTimer} title="Reprendre"
+                  style={{ width:'34px', height:'34px', borderRadius:'50%', background:'#F2E000', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <svg width="11" height="11" viewBox="0 0 10 12"><polygon points="0,0 10,6 0,12" fill="#111"/></svg>
+                </button>
+                <button onClick={stopTimer} title="Arrêter et sauvegarder"
+                  style={{ width:'34px', height:'34px', borderRadius:'50%', background:'#E24B4A', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <svg width="11" height="11" viewBox="0 0 12 12"><rect x="0" y="0" width="12" height="12" fill="white"/></svg>
+                </button>
+              </>
+            )}
           </div>
+
+          {timerState === 'paused' && (
+            <div style={{ fontSize:'11px', color:'#888', marginTop:'-6px', paddingLeft:'14px' }}>
+              ⏸ Chrono en pause — cliquez sur ▶ pour reprendre ou ⏹ pour sauvegarder
+            </div>
+          )}
 
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
             <span style={{ fontSize:'11px', fontWeight:'500', color:'#aaa', textTransform:'uppercase', letterSpacing:'0.7px' }}>Entrées</span>
