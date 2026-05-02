@@ -6,7 +6,7 @@ const supabase = createClient(
   process.env.SUPABASE_SECRET_KEY!
 )
 
-aasync function refreshToken(userId: string, refreshToken: string) {
+async function refreshToken(userId: string, refreshToken: string) {
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -24,6 +24,7 @@ aasync function refreshToken(userId: string, refreshToken: string) {
     token_type: data.token_type,
     expires_in: data.expires_in,
     error: data.error,
+    error_description: data.error_description,
   }))
   if (!data.access_token) return null
   await supabase.from('users').update({ google_access_token: data.access_token }).eq('id', userId)
@@ -65,24 +66,24 @@ export async function GET(req: NextRequest) {
     fetch(listUrl, { headers: { Authorization: `Bearer ${token}` } })
 
   let listRes = await fetchList(accessToken)
-console.log('[gmail] initial list response:', listRes.status, 'has_refresh:', !!user.google_refresh_token)
+  console.log('[gmail] initial list response:', listRes.status, 'has_refresh:', !!user.google_refresh_token)
 
-if (listRes.status === 401) {
-  if (!user.google_refresh_token) {
-    console.log('[gmail] no refresh token available')
-    return NextResponse.json({ error: 'no_refresh_token' }, { status: 401 })
+  if (listRes.status === 401) {
+    if (!user.google_refresh_token) {
+      console.log('[gmail] no refresh token available')
+      return NextResponse.json({ error: 'no_refresh_token' }, { status: 401 })
+    }
+    console.log('[gmail] access token expired, refreshing...')
+    const newToken = await refreshToken(userId, user.google_refresh_token)
+    if (!newToken) {
+      console.log('[gmail] refresh failed')
+      return NextResponse.json({ error: 'token_expired' }, { status: 401 })
+    }
+    accessToken = newToken
+    console.log('[gmail] retrying with new token')
+    listRes = await fetchList(accessToken)
+    console.log('[gmail] retry response:', listRes.status)
   }
-  console.log('[gmail] access token expired, refreshing...')
-  const newToken = await refreshToken(userId, user.google_refresh_token)
-  if (!newToken) {
-    console.log('[gmail] refresh failed')
-    return NextResponse.json({ error: 'token_expired' }, { status: 401 })
-  }
-  accessToken = newToken
-  console.log('[gmail] retrying with new token')
-  listRes = await fetchList(accessToken)
-  console.log('[gmail] retry response:', listRes.status)
-}
 
   if (!listRes.ok) {
     const errBody = await listRes.text()
@@ -126,7 +127,6 @@ if (listRes.status === 401) {
     })
   )
 
-  // Filtrer les messages null (échecs de fetch)
   const validMessages = messages.filter(m => m !== null)
 
   return NextResponse.json({
