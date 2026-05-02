@@ -42,7 +42,6 @@ export default function CalendrierPage() {
   const [placed, setPlaced] = useState<any[]>([])
   const [googleEvents, setGoogleEvents] = useState<any[]>([])
   const [googleConnected, setGoogleConnected] = useState(false)
-  // Vue semaine : tâches placées par jour (0=lun ... 4=ven) et événements Google par jour
   const [weekTasks, setWeekTasks] = useState<any[][]>([[],[],[],[],[]])
   const [weekGoogle, setWeekGoogle] = useState<any[][]>([[],[],[],[],[]])
   const [tooltip, setTooltip] = useState<{x:number,y:number,text:string}|null>(null)
@@ -50,7 +49,6 @@ export default function CalendrierPage() {
   const dragTask = useRef<any>(null)
   const dragCalIdx = useRef<number|null>(null)
   const dragCalOffset = useRef(0)
-  // Vue semaine : tâche en cours de drag entre colonnes
   const dragWeekTask = useRef<any>(null)
   const dragWeekFromDay = useRef<number|null>(null)
   const [dragOverDay, setDragOverDay] = useState<number|null>(null)
@@ -132,7 +130,6 @@ export default function CalendrierPage() {
     }
   }
 
-  // Charge toute la semaine pour la vue kanban
   async function loadWeek(uid: string) {
     const monday = getMonday()
     const dates = Array.from({length:5}, (_, i) => {
@@ -140,7 +137,6 @@ export default function CalendrierPage() {
       return d.toISOString().split('T')[0]
     })
 
-    // 1. Toutes les tâches non terminées avec scheduled_at sur ces 5 jours
     const { data: allTasks } = await supabase.from('tasks')
       .select('*, category:categories(name,color)')
       .eq('user_id', uid)
@@ -170,7 +166,6 @@ export default function CalendrierPage() {
     setWeekTasks(tasksByDay)
     setUnplanned(stillUnplanned)
 
-    // 2. Événements Google pour les 5 jours en parallèle
     try {
       const results = await Promise.all(
         dates.map(ds =>
@@ -330,7 +325,7 @@ export default function CalendrierPage() {
       id: task.id,
       title: task.description,
       dur: parseDuration(task.estimated_duration),
-      timeMin: 9*60, // 9h00 par défaut
+      timeMin: 9*60,
       isUnplanned: true,
     }
     dragWeekFromDay.current = null
@@ -351,12 +346,10 @@ export default function CalendrierPage() {
     setDragOverDay(null)
     const t = dragWeekTask.current
     if (!t) return
-    // Si replanifié vers le même jour, ne rien faire
     if (dragWeekFromDay.current === dayIdx) {
       dragWeekTask.current = null
       return
     }
-    // Conserver l'heure d'origine si déjà planifiée, sinon 9h
     const timeMin = t.timeMin || 9*60
     await saveScheduled(t.id, timeMin, t.dur, dayIdx)
     dragWeekTask.current = null
@@ -412,7 +405,6 @@ export default function CalendrierPage() {
         <div style={{ background:'#111', padding:'10px 1rem', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0, gap:'12px' }}>
           <h1 style={{ fontSize:'15px', fontWeight:'500', color:'#F2E000' }}>Mon calendrier</h1>
 
-          {/* Toggle Jour / Semaine */}
           <div style={{ display:'flex', background:'rgba(255,255,255,0.08)', borderRadius:'8px', padding:'2px' }}>
             <button onClick={() => setView('jour')}
               style={{ background: view==='jour' ? '#F2E000' : 'transparent', color: view==='jour' ? '#111' : 'rgba(255,255,255,0.7)', border:'none', borderRadius:'6px', padding:'5px 14px', fontSize:'12px', fontWeight:'500', cursor:'pointer' }}>
@@ -438,7 +430,7 @@ export default function CalendrierPage() {
           )}
         </div>
 
-        {/* Day tabs (vue Jour) ou Week header (vue Semaine) */}
+        {/* Day tabs */}
         <div style={{ background:'#1a1a1a', borderBottom:'0.5px solid rgba(255,255,255,0.08)', display:'flex', alignItems:'center', padding:'0 8px', gap:'8px', flexShrink:0 }}>
           <button onClick={() => { setWeekOffset(w => w-1); setSelectedDay(0) }}
             style={{ background:'#F2E000', border:'none', borderRadius:'6px', width:'28px', height:'28px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
@@ -546,7 +538,6 @@ export default function CalendrierPage() {
               </div>
             </div>
 
-            {/* Tâches à planifier */}
             <div style={{ width:'380px', flexShrink:0, background:'#f9f9f7', display:'flex', flexDirection:'column', overflowY:'auto' }}>
               <div style={{ padding:'10px 12px', borderBottom:'0.5px solid rgba(0,0,0,0.08)', fontSize:'10px', fontWeight:'500', color:'#777', textTransform:'uppercase', letterSpacing:'0.5px', background:'white' }}>
                 Tâches à planifier
@@ -572,125 +563,91 @@ export default function CalendrierPage() {
         )}
 
         {/* === VUE SEMAINE === */}
-{view === 'semaine' && (
-  <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
-    {/* Zone scrollable contenant la colonne d'heures + les 5 colonnes */}
-    <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'auto', background:'white' }}>
-      {/* En-têtes de jours (sticky en haut) */}
-      <div style={{ display:'flex', position:'sticky', top:0, background:'white', zIndex:5, borderBottom:'0.5px solid rgba(0,0,0,0.08)' }}>
-        <div style={{ width:'48px', flexShrink:0, borderRight:'0.5px solid rgba(0,0,0,0.08)' }} />
-        {JOURS_LONG.map((jour, dayIdx) => {
-          const d = getDateForDay(dayIdx)
-          const ds = d.toISOString().split('T')[0]
-          const isToday = ds === todayStr
-          return (
-            <div key={dayIdx}
-              style={{ flex:1, minWidth:'160px', padding:'10px 12px', borderRight: dayIdx < 4 ? '0.5px solid rgba(0,0,0,0.08)' : 'none' }}>
-              <div style={{ fontSize:'13px', fontWeight:'500', color: isToday ? '#3B6D11' : '#111' }}>{jour}</div>
-              <div style={{ fontSize:'11px', color:'#888', marginTop:'2px' }}>{d.getDate()} {MOIS[d.getMonth()]}</div>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Grille horaire */}
-      <div style={{ display:'flex', position:'relative' }}>
-        {/* Colonne des heures à gauche */}
-        <div style={{ width:'48px', flexShrink:0, borderRight:'0.5px solid rgba(0,0,0,0.08)' }}>
-          <div style={{ height:'8px' }} />
-          {HOURS.map(h => (
-            <div key={h} style={{ height:`${PPH}px`, borderBottom:'0.5px solid rgba(0,0,0,0.05)', display:'flex', alignItems:'flex-start', justifyContent:'flex-end', padding:'3px 6px 0 0', fontSize:'11px', color:'#bbb' }}>
-              {h}:00
-            </div>
-          ))}
-        </div>
-
-        {/* 5 colonnes Lun-Ven avec grille horaire */}
-        {JOURS_LONG.map((_, dayIdx) => {
-          const dayTasks = weekTasks[dayIdx] || []
-          const dayGoogle = weekGoogle[dayIdx] || []
-          const isOver = dragOverDay === dayIdx
-
-          return (
-            <div key={dayIdx}
-              onDragOver={e => onColDragOver(e, dayIdx)}
-              onDragLeave={onColDragLeave}
-              onDrop={e => onColDrop(e, dayIdx)}
-              style={{ flex:1, minWidth:'160px', position:'relative', height: HOURS.length*PPH+'px', borderRight: dayIdx < 4 ? '0.5px solid rgba(0,0,0,0.08)' : 'none', background: isOver ? 'rgba(242,224,0,0.08)' : 'transparent', transition:'background 0.1s' }}>
-              {/* Lignes d'heures */}
-              {HOURS.map((h,i) => (
-                <div key={h}>
-                  <div style={{ position:'absolute', left:0, right:0, top:i*PPH, borderBottom:'0.5px solid rgba(0,0,0,0.06)' }} />
-                  <div style={{ position:'absolute', left:0, right:0, top:i*PPH+30, borderBottom:'0.5px dashed rgba(0,0,0,0.04)' }} />
-                </div>
-              ))}
-
-              {/* Événements Google (lecture seule) */}
-              {dayGoogle.map((t, idx) => {
-                const top = (t.timeMin - 8*60) * PPM
-                const height = Math.max(t.dur * PPM, 20)
-                return (
-                  <div key={`g-${t.id}-${idx}`}
-                    style={{ position:'absolute', left:'3px', right:'3px', top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 5px', overflow:'hidden', zIndex:2, background:'#E6F1FB', color:'#0C447C', borderLeft:'3px solid #185FA5' }}>
-                    <div style={{ fontSize:'10px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}</div>
-                    <div style={{ fontSize:'9px', opacity:0.7, marginTop:'1px' }}>{minToStr(t.timeMin)}</div>
-                  </div>
-                )
-              })}
-
-              {/* Tâches placées (draggables) */}
-              {dayTasks.map((t, idx) => {
-                const top = (t.timeMin - 8*60) * PPM
-                const height = Math.max(t.dur * PPM, 20)
-                return (
-                  <div key={`t-${t.id}-${idx}`} draggable
-                    onDragStart={e => onWeekTaskDragStart(e, t, dayIdx)}
-                    style={{ position:'absolute', left:'3px', right:'3px', top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 18px 3px 5px', overflow:'hidden', zIndex:3, cursor:'grab', background:'#EAF3DE', color:'#27500A', borderLeft:`3px solid ${t.color || '#3B6D11'}` }}>
-                    <div style={{ fontSize:'10px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}</div>
-                    <div style={{ fontSize:'9px', opacity:0.7, marginTop:'1px' }}>{minToStr(t.timeMin)}</div>
-                    <div onClick={e => { e.stopPropagation(); removeFromCalendar(t.id) }}
-                      style={{ position:'absolute', top:'2px', right:'3px', width:'14px', height:'14px', borderRadius:'50%', background:'rgba(0,0,0,0.1)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'10px', lineHeight:'1', color:'#27500A', opacity:0.6 }}
-                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity='1'}
-                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity='0.6'}>
-                      ×
+        {view === 'semaine' && (
+          <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
+            <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'auto', background:'white' }}>
+              {/* En-têtes de jours (sticky) */}
+              <div style={{ display:'flex', position:'sticky', top:0, background:'white', zIndex:5, borderBottom:'0.5px solid rgba(0,0,0,0.08)' }}>
+                <div style={{ width:'48px', flexShrink:0, borderRight:'0.5px solid rgba(0,0,0,0.08)' }} />
+                {JOURS_LONG.map((jour, dayIdx) => {
+                  const d = getDateForDay(dayIdx)
+                  const ds = d.toISOString().split('T')[0]
+                  const isToday = ds === todayStr
+                  return (
+                    <div key={dayIdx}
+                      style={{ flex:1, minWidth:'160px', padding:'10px 12px', borderRight: dayIdx < 4 ? '0.5px solid rgba(0,0,0,0.08)' : 'none' }}>
+                      <div style={{ fontSize:'13px', fontWeight:'500', color: isToday ? '#3B6D11' : '#111' }}>{jour}</div>
+                      <div style={{ fontSize:'11px', color:'#888', marginTop:'2px' }}>{d.getDate()} {MOIS[d.getMonth()]}</div>
                     </div>
-                  </div>
-                )
-              })}
-            </div>
-          )
-        })}
-      </div>
-    </div>
+                  )
+                })}
+              </div>
 
-    {/* Tâches à planifier (vue semaine) */}
-    <div style={{ width:'280px', flexShrink:0, background:'#f9f9f7', display:'flex', flexDirection:'column', borderLeft:'0.5px solid rgba(0,0,0,0.1)', overflowY:'auto' }}>
-      <div style={{ padding:'10px 12px', borderBottom:'0.5px solid rgba(0,0,0,0.08)', fontSize:'10px', fontWeight:'500', color:'#777', textTransform:'uppercase', letterSpacing:'0.5px', background:'white' }}>
-        Tâches à planifier
-      </div>
-      <div style={{ padding:'8px', display:'flex', flexDirection:'column', gap:'6px' }}>
-        {unplanned.length === 0 && (
-          <div style={{ textAlign:'center', fontSize:'11px', color:'#aaa', padding:'1.5rem' }}>Toutes les tâches sont planifiées !</div>
-        )}
-        {unplanned.map((t: any) => (
-          <div key={t.id} draggable onDragStart={e => onWeekUnplannedDragStart(e, t)}
-            style={{ background:'white', border:'0.5px solid rgba(0,0,0,0.1)', borderLeft:`3px solid ${t.category?.color || '#3B6D11'}`, borderRadius:'8px', padding:'9px 12px', cursor:'grab', userSelect:'none' }}>
-            <div style={{ fontSize:'12px', fontWeight:'500', color:'#111' }}>{t.description}</div>
-            <div style={{ fontSize:'11px', color:'#aaa', marginTop:'3px', display:'flex', gap:'8px' }}>
-              <span>{t.category?.name || '–'}</span>
-              {t.estimated_duration && <span>⏱ {t.estimated_duration}</span>}
-            </div>
-          </div>
-        ))}
-      </div>
-      <div style={{ fontSize:'11px', color:'#ccc', textAlign:'center', padding:'8px' }}>← Glissez une tâche vers un jour</div>
-    </div>
-  </div>
-)}
-              })}
+              {/* Grille horaire */}
+              <div style={{ display:'flex', position:'relative' }}>
+                <div style={{ width:'48px', flexShrink:0, borderRight:'0.5px solid rgba(0,0,0,0.08)' }}>
+                  <div style={{ height:'8px' }} />
+                  {HOURS.map(h => (
+                    <div key={h} style={{ height:`${PPH}px`, borderBottom:'0.5px solid rgba(0,0,0,0.05)', display:'flex', alignItems:'flex-start', justifyContent:'flex-end', padding:'3px 6px 0 0', fontSize:'11px', color:'#bbb' }}>
+                      {h}:00
+                    </div>
+                  ))}
+                </div>
+
+                {JOURS_LONG.map((_, dayIdx) => {
+                  const dayTasks = weekTasks[dayIdx] || []
+                  const dayGoogle = weekGoogle[dayIdx] || []
+                  const isOver = dragOverDay === dayIdx
+
+                  return (
+                    <div key={dayIdx}
+                      onDragOver={e => onColDragOver(e, dayIdx)}
+                      onDragLeave={onColDragLeave}
+                      onDrop={e => onColDrop(e, dayIdx)}
+                      style={{ flex:1, minWidth:'160px', position:'relative', height: HOURS.length*PPH+'px', borderRight: dayIdx < 4 ? '0.5px solid rgba(0,0,0,0.08)' : 'none', background: isOver ? 'rgba(242,224,0,0.08)' : 'transparent', transition:'background 0.1s' }}>
+                      {HOURS.map((h,i) => (
+                        <div key={h}>
+                          <div style={{ position:'absolute', left:0, right:0, top:i*PPH, borderBottom:'0.5px solid rgba(0,0,0,0.06)' }} />
+                          <div style={{ position:'absolute', left:0, right:0, top:i*PPH+30, borderBottom:'0.5px dashed rgba(0,0,0,0.04)' }} />
+                        </div>
+                      ))}
+
+                      {dayGoogle.map((t, idx) => {
+                        const top = (t.timeMin - 8*60) * PPM
+                        const height = Math.max(t.dur * PPM, 20)
+                        return (
+                          <div key={`g-${t.id}-${idx}`}
+                            style={{ position:'absolute', left:'3px', right:'3px', top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 5px', overflow:'hidden', zIndex:2, background:'#E6F1FB', color:'#0C447C', borderLeft:'3px solid #185FA5' }}>
+                            <div style={{ fontSize:'10px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}</div>
+                            <div style={{ fontSize:'9px', opacity:0.7, marginTop:'1px' }}>{minToStr(t.timeMin)}</div>
+                          </div>
+                        )
+                      })}
+
+                      {dayTasks.map((t, idx) => {
+                        const top = (t.timeMin - 8*60) * PPM
+                        const height = Math.max(t.dur * PPM, 20)
+                        return (
+                          <div key={`t-${t.id}-${idx}`} draggable
+                            onDragStart={e => onWeekTaskDragStart(e, t, dayIdx)}
+                            style={{ position:'absolute', left:'3px', right:'3px', top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 18px 3px 5px', overflow:'hidden', zIndex:3, cursor:'grab', background:'#EAF3DE', color:'#27500A', borderLeft:`3px solid ${t.color || '#3B6D11'}` }}>
+                            <div style={{ fontSize:'10px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}</div>
+                            <div style={{ fontSize:'9px', opacity:0.7, marginTop:'1px' }}>{minToStr(t.timeMin)}</div>
+                            <div onClick={e => { e.stopPropagation(); removeFromCalendar(t.id) }}
+                              style={{ position:'absolute', top:'2px', right:'3px', width:'14px', height:'14px', borderRadius:'50%', background:'rgba(0,0,0,0.1)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'10px', lineHeight:'1', color:'#27500A', opacity:0.6 }}
+                              onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity='1'}
+                              onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity='0.6'}>
+                              ×
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                })}
+              </div>
             </div>
 
-            {/* Tâches à planifier (vue semaine) */}
             <div style={{ width:'280px', flexShrink:0, background:'#f9f9f7', display:'flex', flexDirection:'column', borderLeft:'0.5px solid rgba(0,0,0,0.1)', overflowY:'auto' }}>
               <div style={{ padding:'10px 12px', borderBottom:'0.5px solid rgba(0,0,0,0.08)', fontSize:'10px', fontWeight:'500', color:'#777', textTransform:'uppercase', letterSpacing:'0.5px', background:'white' }}>
                 Tâches à planifier
