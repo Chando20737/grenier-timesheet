@@ -94,6 +94,8 @@ export default function CalendrierPage() {
   })
   const [newSubtask, setNewSubtask] = useState('')
 
+  const [eventDetails, setEventDetails] = useState<any | null>(null)
+
   const dragCalOffset = useRef(0)
   const dragWeekTask = useRef<any>(null)
   const dragWeekFromDay = useRef<number|null>(null)
@@ -248,7 +250,13 @@ export default function CalendrierPage() {
           const end = new Date(e.end)
           const timeMin = start.getHours()*60 + start.getMinutes()
           const dur = Math.round((end.getTime() - start.getTime()) / 60000)
-          return { id: e.id, title: e.title, timeMin, dur, type: 'agenda' }
+          return {
+            id: e.id, title: e.title, timeMin, dur, type: 'agenda',
+            start: e.start, end: e.end,
+            description: e.description, location: e.location,
+            hangoutLink: e.hangoutLink, htmlLink: e.htmlLink,
+            organizer: e.organizer, attendees: e.attendees || [],
+          }
         })
       )
       setWeekGoogle(googleByDay)
@@ -735,7 +743,9 @@ export default function CalendrierPage() {
                       const height = Math.max(t.dur * PPM, 20)
                       return (
                         <div key={`g-${t.id}-${idx}`}
-                          style={{ position:'absolute', left:'3px', right:'3px', top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 5px', overflow:'hidden', zIndex:2, background:'#E6F1FB', color:'#0C447C', borderLeft:'3px solid #185FA5' }}>
+                          onClick={() => setEventDetails(t)}
+                          title="Cliquer pour voir les détails"
+                          style={{ position:'absolute', left:'3px', right:'3px', top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 5px', overflow:'hidden', zIndex:2, background:'#E6F1FB', color:'#0C447C', borderLeft:'3px solid #185FA5', cursor:'pointer' }}>
                           <div style={{ fontSize:'10px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}</div>
                           <div style={{ fontSize:'9px', opacity:0.7, marginTop:'1px' }}>{minToStr(t.timeMin)}</div>
                         </div>
@@ -896,7 +906,7 @@ export default function CalendrierPage() {
         </div>
       )}
 
-      {/* Popup d'édition de tâche — avec Notes et Sous-tâches */}
+      {/* Popup d'édition de tâche */}
       {editTask && (
         <div onClick={() => setEditTask(null)}
           style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200 }}>
@@ -950,7 +960,6 @@ export default function CalendrierPage() {
               </select>
             </div>
 
-            {/* Notes */}
             <div style={{ marginBottom:'14px' }}>
               <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'4px' }}>📝 Notes</label>
               <textarea value={editForm.notes} onChange={e => setEditForm({...editForm, notes: e.target.value})}
@@ -959,7 +968,6 @@ export default function CalendrierPage() {
                 style={{ width:'100%', padding:'8px 10px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none', resize:'vertical', fontFamily:'inherit' }} />
             </div>
 
-            {/* Sous-tâches */}
             <div style={{ marginBottom:'14px' }}>
               <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'6px' }}>
                 ✅ Sous-tâches {editForm.subtasks.length > 0 && <span style={{ color:'#aaa' }}>({subtasksDoneCount}/{editForm.subtasks.length})</span>}
@@ -1011,6 +1019,116 @@ export default function CalendrierPage() {
                   Enregistrer
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Popup détails d'un événement Google Agenda */}
+      {eventDetails && (
+        <div onClick={() => setEventDetails(null)}
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:'white', borderRadius:'12px', padding:'1.25rem', width:'520px', maxWidth:'92vw', maxHeight:'90vh', overflowY:'auto', boxShadow:'0 20px 60px rgba(0,0,0,0.3)' }}>
+
+            <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'4px' }}>
+              <div style={{ width:'10px', height:'10px', borderRadius:'2px', background:'#185FA5' }} />
+              <span style={{ fontSize:'10px', color:'#888', textTransform:'uppercase', letterSpacing:'0.7px', fontWeight:'500' }}>Google Agenda</span>
+            </div>
+
+            <h3 style={{ fontSize:'16px', fontWeight:'500', marginBottom:'12px', color:'#111' }}>{eventDetails.title}</h3>
+
+            <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'10px', fontSize:'13px', color:'#555' }}>
+              <span>🕐</span>
+              <span>
+                {new Date(eventDetails.start).toLocaleDateString('fr-CA', { weekday:'long', day:'numeric', month:'long' })}
+                {' · '}
+                {new Date(eventDetails.start).toLocaleTimeString('fr-CA', { hour:'2-digit', minute:'2-digit' })}
+                {' – '}
+                {new Date(eventDetails.end).toLocaleTimeString('fr-CA', { hour:'2-digit', minute:'2-digit' })}
+              </span>
+            </div>
+
+            {eventDetails.location && (
+              <div style={{ display:'flex', alignItems:'flex-start', gap:'8px', marginBottom:'10px', fontSize:'13px', color:'#555' }}>
+                <span>📍</span>
+                <span style={{ flex:1, wordBreak:'break-word' }}>{eventDetails.location}</span>
+              </div>
+            )}
+
+            {eventDetails.hangoutLink && (
+              <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'10px' }}>
+                <span>🎥</span>
+                <a href={eventDetails.hangoutLink} target="_blank" rel="noopener noreferrer"
+                  style={{ fontSize:'13px', color:'#185FA5', textDecoration:'none', padding:'5px 12px', background:'#E6F1FB', borderRadius:'6px', fontWeight:'500' }}>
+                  Rejoindre Google Meet
+                </a>
+              </div>
+            )}
+
+            {eventDetails.organizer && (
+              <div style={{ display:'flex', alignItems:'flex-start', gap:'8px', marginBottom:'10px', fontSize:'13px', color:'#555' }}>
+                <span>👤</span>
+                <span>
+                  <strong style={{ fontWeight:'500', color:'#111' }}>Organisateur :</strong>{' '}
+                  {eventDetails.organizer.name || eventDetails.organizer.email}
+                </span>
+              </div>
+            )}
+
+            {eventDetails.attendees && eventDetails.attendees.length > 0 && (
+              <div style={{ marginBottom:'12px' }}>
+                <div style={{ fontSize:'11px', color:'#777', marginBottom:'6px', display:'flex', alignItems:'center', gap:'6px' }}>
+                  <span>👥</span>
+                  <span>Invités ({eventDetails.attendees.length})</span>
+                </div>
+                <div style={{ display:'flex', flexDirection:'column', gap:'4px', maxHeight:'200px', overflowY:'auto' }}>
+                  {eventDetails.attendees.map((a: any, i: number) => {
+                    const statusColor = {
+                      accepted: '#3B6D11',
+                      declined: '#A32D2D',
+                      tentative: '#854F0B',
+                      needsAction: '#aaa',
+                    }[a.responseStatus as string] || '#aaa'
+                    const statusLabel = {
+                      accepted: '✓ Accepté',
+                      declined: '✗ Refusé',
+                      tentative: '? Peut-être',
+                      needsAction: '— Sans réponse',
+                    }[a.responseStatus as string] || ''
+                    return (
+                      <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'8px', background:'#f9f9f7', border:'0.5px solid rgba(0,0,0,0.08)', borderRadius:'6px', padding:'6px 10px' }}>
+                        <div style={{ fontSize:'12px', color:'#111', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                          {a.name || a.email}
+                          {a.self && <span style={{ fontSize:'10px', color:'#888', marginLeft:'5px' }}>(vous)</span>}
+                        </div>
+                        <span style={{ fontSize:'10px', color:statusColor, whiteSpace:'nowrap', fontWeight:'500' }}>{statusLabel}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {eventDetails.description && (
+              <div style={{ marginBottom:'12px' }}>
+                <div style={{ fontSize:'11px', color:'#777', marginBottom:'6px' }}>📝 Description</div>
+                <div style={{ fontSize:'12px', color:'#555', background:'#f9f9f7', border:'0.5px solid rgba(0,0,0,0.08)', borderRadius:'6px', padding:'10px', whiteSpace:'pre-wrap', maxHeight:'200px', overflowY:'auto' }}
+                  dangerouslySetInnerHTML={{ __html: eventDetails.description }} />
+              </div>
+            )}
+
+            <div style={{ display:'flex', gap:'8px', justifyContent:'space-between', alignItems:'center', marginTop:'14px' }}>
+              {eventDetails.htmlLink ? (
+                <a href={eventDetails.htmlLink} target="_blank" rel="noopener noreferrer"
+                  style={{ padding:'7px 14px', fontSize:'12px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', background:'white', color:'#555', textDecoration:'none', cursor:'pointer' }}>
+                  Ouvrir dans Google Agenda ↗
+                </a>
+              ) : <span />}
+              <button onClick={() => setEventDetails(null)}
+                style={{ padding:'7px 16px', fontSize:'13px', background:'#F2E000', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>
+                Fermer
+              </button>
             </div>
           </div>
         </div>
