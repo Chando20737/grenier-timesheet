@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 
 const JOURS_LONG = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi']
 const MOIS = ['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc']
-const HOURS = Array.from({length:11}, (_,i) => i+8)
+const HOURS = Array.from({length:14}, (_,i) => i+6)
 const PPH = 60, PPM = PPH/60
 
 const RECURRENCES = [
@@ -426,8 +426,8 @@ export default function CalendrierPage() {
   }
 
   function getMinFromY(y: number, offsetY = 0) {
-    return Math.max(8*60, Math.min(17*60+55, snap5(8*60 + (y - offsetY) / PPM)))
-  }
+  return Math.max(6*60, Math.min(19*60+55, snap5(6*60 + (y - offsetY) / PPM)))
+}
 
   function onWeekTaskDragStart(e: React.DragEvent, task: any, fromDay: number) {
     dragWeekTask.current = task
