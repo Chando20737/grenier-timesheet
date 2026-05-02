@@ -32,16 +32,64 @@ export default function DashboardPage() {
   const taskWrapRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) { window.location.href = '/login'; return }
-      setUser(data.user)
-      setIsAdmin(data.user.email === 'eric@grenier.qc.ca')
-      loadCategories(data.user.id)
-      loadEntries(data.user.id, new Date())
-      loadTasks(data.user.id)
-      setLoading(false)
-    })
-  }, [])
+  supabase.auth.getUser().then(({ data }) => {
+    if (!data.user) { window.location.href = '/login'; return }
+    setUser(data.user)
+    setIsAdmin(data.user.email === 'eric@grenier.qc.ca')
+    loadCategories(data.user.id)
+    loadEntries(data.user.id, new Date())
+    loadTasks(data.user.id)
+    setLoading(false)
+
+    // Restaurer l'état du chrono depuis localStorage
+    const saved = localStorage.getItem('grenier-timer')
+    if (saved) {
+      try {
+        const s = JSON.parse(saved)
+        if (s.userId === data.user.id) {
+          setDescription(s.description || '')
+          setCatId(s.catId || '')
+          setStartTime(s.startTime || null)
+          if (s.running && s.startTime) {
+            // Recalcule le temps écoulé en tenant compte du temps écoulé pendant l'absence
+            const now = Date.now()
+            const lastTick = s.lastTick || now
+            const extra = Math.floor((now - lastTick) / 1000)
+            const newElapsed = (s.elapsed || 0) + extra
+            setElapsed(newElapsed)
+            setRunning(true)
+            setPaused(false)
+            interval.current = setInterval(() => setElapsed(e => e + 1), 1000)
+          } else if (s.paused) {
+            setElapsed(s.elapsed || 0)
+            setPaused(true)
+            setRunning(false)
+          }
+        }
+      } catch {}
+    }
+  })
+}, [])
+  // Sauvegarde l'état du chrono en continu
+useEffect(() => {
+  if (!user) return
+  if (running || paused) {
+    localStorage.setItem('grenier-timer', JSON.stringify({
+      userId: user.id,
+      description,
+      catId,
+      startTime,
+      elapsed,
+      running,
+      paused,
+      lastTick: Date.now(),
+    }))
+  } else {
+    setElapsed(0); setDescription(''); setStartTime(null)
+localStorage.removeItem('grenier-timer')
+loadEntries(user.id, date)
+  }
+}, [user, description, catId, startTime, elapsed, running, paused])
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -102,10 +150,10 @@ export default function DashboardPage() {
 
   async function saveEntry() {
     if (!user || elapsed < 5) {
-      // Si moins de 5 secondes, on réinitialise sans sauvegarder
-      setElapsed(0); setStartTime(null); setDescription('')
-      return
-    }
+  setElapsed(0); setStartTime(null); setDescription('')
+  localStorage.removeItem('grenier-timer')
+  return
+}
     const endTime = new Date().toISOString()
     await supabase.from('time_entries').insert({
       user_id: user.id,
