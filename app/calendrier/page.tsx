@@ -184,10 +184,10 @@ export default function CalendrierPage() {
     })
     const dateStrs = dates.map(d => ymd(d))
 
+    // Charger TOUTES les tâches (pas filtre is_done) pour pouvoir afficher les tâches faites
     const { data: allTasks } = await supabase.from('tasks')
       .select('*, category:categories(name,color)')
       .eq('user_id', uid)
-      .eq('is_done', false)
       .order('scheduled_at', { ascending: true })
 
     const { data: occurrences } = await supabase.from('task_occurrences')
@@ -204,25 +204,31 @@ export default function CalendrierPage() {
 
     ;(allTasks || []).forEach((t: any) => {
       if (!t.scheduled_at) {
-        if (!t.recurrence) stillUnplanned.push(t)
+        // Tâche non planifiée (panneau de droite) — on n'affiche pas les déjà faites
+        if (!t.recurrence && !t.is_done) stillUnplanned.push(t)
         return
       }
 
       const baseDt = new Date(t.scheduled_at)
 
       if (t.recurrence) {
+        // Pour les récurrentes, ne rien faire si la tâche globale est marquée terminée
+        if (t.is_done) return
+
         dates.forEach((targetDate, dayIdx) => {
           if (!recurrenceMatches(t.recurrence, baseDt, targetDate)) return
 
           const dateStr = dateStrs[dayIdx]
           const occKey = `${t.id}_${dateStr}`
           const occ = occMap.get(occKey)
-          if (occ?.is_skipped || occ?.is_done) return
+          // Skipper si l'occurrence est skippée (mais PAS si is_done — on veut l'afficher barrée)
+          if (occ?.is_skipped) return
 
           tasksByDay[dayIdx].push({
             id: t.id,
             occurrenceDate: dateStr,
             isRecurring: true,
+            isDone: !!occ?.is_done,
             title: t.description,
             timeMin: baseDt.getHours()*60 + baseDt.getMinutes(),
             dur: parseDuration(t.estimated_duration),
@@ -241,6 +247,7 @@ export default function CalendrierPage() {
         tasksByDay[dayIdx].push({
           id: t.id,
           isRecurring: false,
+          isDone: !!t.is_done,
           title: t.description,
           timeMin: baseDt.getHours()*60 + baseDt.getMinutes(),
           dur: parseDuration(t.estimated_duration),
@@ -249,7 +256,7 @@ export default function CalendrierPage() {
           scheduled_at: t.scheduled_at,
           gmail_message_id: t.gmail_message_id,
         })
-      } else {
+      } else if (!t.is_done) {
         stillUnplanned.push(t)
       }
     })
@@ -284,6 +291,26 @@ export default function CalendrierPage() {
     } catch {
       setWeekGoogle([[],[],[],[],[]])
     }
+  }
+
+  async function toggleTaskDone(task: any, ev?: React.MouseEvent) {
+    if (ev) ev.stopPropagation()
+    if (!user) return
+
+    if (task.isRecurring) {
+      // Pour une tâche récurrente : on toggle is_done sur task_occurrences
+      const newDone = !task.isDone
+      await supabase.from('task_occurrences').upsert({
+        task_id: task.id,
+        occurrence_date: task.occurrenceDate,
+        is_done: newDone,
+      }, { onConflict: 'task_id,occurrence_date' })
+    } else {
+      // Pour une tâche normale : on toggle is_done sur tasks
+      const newDone = !task.isDone
+      await supabase.from('tasks').update({ is_done: newDone }).eq('id', task.id)
+    }
+    loadWeek(user.id)
   }
 
   function connectGoogle() {
@@ -446,7 +473,6 @@ export default function CalendrierPage() {
 
   function startTimerFromTask() {
     if (!editTask || !user) return
-    // Vérifier s'il y a déjà un chrono en cours
     const existing = localStorage.getItem('grenier-timer')
     if (existing) {
       try {
@@ -458,7 +484,6 @@ export default function CalendrierPage() {
         }
       } catch {}
     }
-    // Sauvegarder l'état du chrono dans localStorage
     const timerState = {
       userId: user.id,
       description: editForm.title || editTask.description || '',
@@ -807,14 +832,21 @@ export default function CalendrierPage() {
                     {dayTasks.map((t, idx) => {
                       const top = (t.timeMin - 6*60) * PPM
                       const height = Math.max(t.dur * PPM, 20)
+                      const isDone = t.isDone
                       return (
                         <div key={`t-${t.id}-${t.occurrenceDate || ''}-${idx}`}
-                          draggable={!t.isRecurring}
+                          draggable={!t.isRecurring && !isDone}
                           onDragStart={e => onWeekTaskDragStart(e, t, dayIdx)}
                           onClick={() => openEditTask(t.id)}
                           title="Cliquer pour modifier"
-                          style={{ position:'absolute', left:'3px', right:'3px', top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 5px', overflow:'hidden', zIndex:3, cursor: t.isRecurring ? 'pointer' : 'grab', background:'#EAF3DE', color:'#27500A', borderLeft:`3px solid ${t.color || '#3B6D11'}` }}>
-                          <div style={{ fontSize:'10px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                          style={{ position:'absolute', left:'3px', right:'3px', top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 5px 3px 22px', overflow:'hidden', zIndex:3, cursor: (t.isRecurring || isDone) ? 'pointer' : 'grab', background: isDone ? '#f0f0f0' : '#EAF3DE', color: isDone ? '#999' : '#27500A', borderLeft:`3px solid ${isDone ? '#bbb' : (t.color || '#3B6D11')}`, opacity: isDone ? 0.7 : 1 }}>
+                          {/* Checkmark cliquable */}
+                          <div onClick={(ev) => toggleTaskDone(t, ev)}
+                            title={isDone ? 'Marquer comme non terminée' : 'Marquer comme terminée'}
+                            style={{ position:'absolute', left:'4px', top:'4px', width:'14px', height:'14px', borderRadius:'50%', border: isDone ? 'none' : '1.5px solid rgba(0,0,0,0.25)', background: isDone ? '#3B6D11' : 'white', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, zIndex:5 }}>
+                            {isDone && <svg width="9" height="9" viewBox="0 0 12 12"><polyline points="2,6 5,9 10,3" stroke="white" strokeWidth="1.8" fill="none" strokeLinecap="round"/></svg>}
+                          </div>
+                          <div style={{ fontSize:'10px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', textDecoration: isDone ? 'line-through' : 'none' }}>
                             {t.isRecurring && '🔁 '}{t.gmail_message_id && '📧 '}{t.title.split('\n')[0]}
                           </div>
                           <div style={{ fontSize:'9px', opacity:0.7, marginTop:'1px' }}>{minToStr(t.timeMin)}</div>
@@ -996,7 +1028,6 @@ export default function CalendrierPage() {
               </div>
             </div>
 
-            {/* Formulaire nouvelle catégorie inline */}
             {showNewCatForm && (
               <div style={{ background:'#f9f9f7', border:'0.5px solid rgba(0,0,0,0.1)', borderRadius:'8px', padding:'10px', marginBottom:'10px' }}>
                 <div style={{ fontSize:'11px', color:'#777', marginBottom:'6px', fontWeight:'500' }}>Nouvelle catégorie</div>
