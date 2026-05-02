@@ -95,12 +95,24 @@ export async function GET(req: NextRequest) {
 
   const data = await res.json()
   const events = (data.items || []).map((e: any) => ({
-    id: e.id,
-    title: e.summary || 'Sans titre',
-    start: e.start?.dateTime || e.start?.date,
-    end: e.end?.dateTime || e.end?.date,
-    allDay: !e.start?.dateTime,
-  }))
+  id: e.id,
+  title: e.summary || 'Sans titre',
+  start: e.start?.dateTime || e.start?.date,
+  end: e.end?.dateTime || e.end?.date,
+  allDay: !e.start?.dateTime,
+  description: e.description || null,
+  location: e.location || null,
+  hangoutLink: e.hangoutLink || null,
+  htmlLink: e.htmlLink || null,
+  organizer: e.organizer ? { email: e.organizer.email, name: e.organizer.displayName } : null,
+  attendees: (e.attendees || []).map((a: any) => ({
+    email: a.email,
+    name: a.displayName,
+    responseStatus: a.responseStatus,
+    organizer: a.organizer || false,
+    self: a.self || false,
+  })),
+}))
 
   return NextResponse.json({ events })
 }
