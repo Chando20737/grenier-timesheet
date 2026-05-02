@@ -478,7 +478,7 @@ export default function CalendrierPage() {
 
     const ghost = document.getElementById(`week-ghost-${dayIdx}`)
     if (ghost) {
-      ghost.style.top = (min - 8*60) * PPM + 'px'
+      ghost.style.top = (min - 6*60) * PPM + 'px'
       ghost.style.height = Math.max(dur * PPM, 10) + 'px'
       ghost.style.display = 'block'
     }
@@ -682,13 +682,12 @@ export default function CalendrierPage() {
 
             <div style={{ display:'flex', position:'relative' }}>
               <div style={{ width:'48px', flexShrink:0, borderRight:'0.5px solid rgba(0,0,0,0.08)' }}>
-                <div style={{ height:'8px' }} />
-                {HOURS.map(h => (
-                  <div key={h} style={{ height:`${PPH}px`, borderBottom:'0.5px solid rgba(0,0,0,0.05)', display:'flex', alignItems:'flex-start', justifyContent:'flex-end', padding:'3px 6px 0 0', fontSize:'11px', color:'#bbb' }}>
-                    {h}:00
-                  </div>
-                ))}
-              </div>
+  {HOURS.map(h => (
+    <div key={h} style={{ height:`${PPH}px`, borderBottom:'0.5px solid rgba(0,0,0,0.05)', display:'flex', alignItems:'flex-start', justifyContent:'flex-end', padding:'0 6px 0 0', fontSize:'11px', color:'#bbb', transform:'translateY(-6px)' }}>
+      {h}:00
+    </div>
+  ))}
+</div>
 
               {JOURS_LONG.map((_, dayIdx) => {
                 const dayTasks = weekTasks[dayIdx] || []
@@ -712,7 +711,7 @@ export default function CalendrierPage() {
                       style={{ display:'none', position:'absolute', left:'3px', right:'3px', background:'rgba(242,224,0,0.25)', border:'1.5px dashed #D4B800', borderRadius:'4px', pointerEvents:'none', zIndex:4 }} />
 
                     {dayGoogle.map((t, idx) => {
-                      const top = (t.timeMin - 8*60) * PPM
+                      const top = (t.timeMin - 6*60) * PPM
                       const height = Math.max(t.dur * PPM, 20)
                       return (
                         <div key={`g-${t.id}-${idx}`}
