@@ -27,6 +27,10 @@ function parseDuration(s: string | null): number {
   if (mins) return parseInt(mins[1])
   return 60
 }
+function formatFrom(from: string) {
+  const m = from.match(/^"?([^"<]+)"?\s*<.*>$/)
+  return m ? m[1].trim() : from
+}
 
 export default function CalendrierPage() {
   const [user, setUser] = useState<any>(null)
@@ -44,13 +48,31 @@ export default function CalendrierPage() {
   const [googleConnected, setGoogleConnected] = useState(false)
   const [weekTasks, setWeekTasks] = useState<any[][]>([[],[],[],[],[]])
   const [weekGoogle, setWeekGoogle] = useState<any[][]>([[],[],[],[],[]])
+  const [categories, setCategories] = useState<any[]>([])
   const [tooltip, setTooltip] = useState<{x:number,y:number,text:string}|null>(null)
+
+  // Onglets panneau droit
+  const [sidePanel, setSidePanel] = useState<'tasks' | 'gmail'>('tasks')
+  const [gmailMessages, setGmailMessages] = useState<any[]>([])
+  const [gmailLoading, setGmailLoading] = useState(false)
+
+  // Formulaire création de tâche
+  const [showAddForm, setShowAddForm] = useState<number | null>(null) // dayIdx où le formulaire est ouvert
+  const [newTitle, setNewTitle] = useState('')
+  const [newTime, setNewTime] = useState('09:00')
+  const [newDur, setNewDur] = useState('60')
+  const [newCat, setNewCat] = useState('')
+
+  // Popup drag courriel
+  const [dropEmailModal, setDropEmailModal] = useState<{ message: any, dayIdx: number } | null>(null)
+
   const areaRef = useRef<HTMLDivElement>(null)
   const dragTask = useRef<any>(null)
   const dragCalIdx = useRef<number|null>(null)
   const dragCalOffset = useRef(0)
   const dragWeekTask = useRef<any>(null)
   const dragWeekFromDay = useRef<number|null>(null)
+  const dragEmail = useRef<any>(null)
   const [dragOverDay, setDragOverDay] = useState<number|null>(null)
   const resizing = useRef<{idx:number,startY:number,origDur:number}|null>(null)
 
@@ -61,6 +83,7 @@ export default function CalendrierPage() {
       setIsAdmin(data.user.email === 'eric@grenier.qc.ca')
       setLoading(false)
       checkGoogleConnection(data.user.id)
+      loadCategories(data.user.id)
     })
     const params = new URLSearchParams(window.location.search)
     if (params.get('google') === 'connected') {
@@ -78,9 +101,36 @@ export default function CalendrierPage() {
     }
   }, [user, weekOffset, selectedDay, view])
 
+  // Charger Gmail quand l'onglet est ouvert pour la première fois
+  useEffect(() => {
+    if (sidePanel === 'gmail' && user && gmailMessages.length === 0 && !gmailLoading) {
+      loadGmail(user.id)
+    }
+  }, [sidePanel, user])
+
   async function checkGoogleConnection(uid: string) {
     const { data } = await supabase.from('users').select('google_access_token').eq('id', uid).single()
     setGoogleConnected(!!data?.google_access_token)
+  }
+
+  async function loadCategories(uid: string) {
+    const { data } = await supabase.from('categories').select('*')
+      .or(`user_id.eq.${uid},is_global.eq.true`).order('name')
+    setCategories(data || [])
+  }
+
+  async function loadGmail(uid: string) {
+    setGmailLoading(true)
+    try {
+      const res = await fetch(`/api/gmail/list?userId=${uid}`)
+      if (res.status === 401) { setGmailMessages([]); return }
+      const data = await res.json()
+      setGmailMessages(data.messages || [])
+    } catch {
+      setGmailMessages([])
+    } finally {
+      setGmailLoading(false)
+    }
   }
 
   async function loadTasks(uid: string) {
@@ -158,6 +208,7 @@ export default function CalendrierPage() {
           color: t.category?.color || '#3B6D11',
           category: t.category?.name,
           scheduled_at: t.scheduled_at,
+          gmail_message_id: t.gmail_message_id,
         })
       } else {
         stillUnplanned.push(t)
@@ -232,6 +283,47 @@ export default function CalendrierPage() {
     await supabase.from('tasks').update({ scheduled_at: null }).eq('id', taskId)
     if (view === 'jour') loadTasks(user.id)
     else loadWeek(user.id)
+  }
+
+  // Création d'une nouvelle tâche dans une journée
+  async function createTaskInDay(dayIdx: number) {
+    if (!newTitle.trim() || !user) return
+    const [hh, mm] = newTime.split(':').map(Number)
+    const d = getDateForDay(dayIdx)
+    d.setHours(hh, mm, 0, 0)
+    await supabase.from('tasks').insert({
+      user_id: user.id,
+      description: newTitle.trim(),
+      scheduled_at: d.toISOString(),
+      estimated_duration: newDur + ' min',
+      category_id: newCat || null,
+      source: 'manual',
+    })
+    setShowAddForm(null)
+    setNewTitle(''); setNewTime('09:00'); setNewDur('60'); setNewCat('')
+    loadWeek(user.id)
+  }
+
+  // Création tâche depuis un courriel
+  async function createTaskFromEmail(message: any, dayIdx: number, withLink: boolean) {
+    if (!user) return
+    let description = message.subject
+    if (withLink) {
+      const link = `https://mail.google.com/mail/u/0/#inbox/${message.id}`
+      description = `${message.subject}\n\n📧 ${link}`
+    }
+    const d = getDateForDay(dayIdx)
+    d.setHours(9, 0, 0, 0)
+    await supabase.from('tasks').insert({
+      user_id: user.id,
+      description,
+      scheduled_at: d.toISOString(),
+      estimated_duration: '30 min',
+      source: 'gmail',
+      gmail_message_id: message.id,
+    })
+    setDropEmailModal(null)
+    loadWeek(user.id)
   }
 
   function getMinFromY(y: number, offsetY = 0) {
@@ -317,6 +409,7 @@ export default function CalendrierPage() {
   function onWeekTaskDragStart(e: React.DragEvent, task: any, fromDay: number) {
     dragWeekTask.current = task
     dragWeekFromDay.current = fromDay
+    dragEmail.current = null
     e.dataTransfer.effectAllowed = 'move'
   }
 
@@ -329,7 +422,15 @@ export default function CalendrierPage() {
       isUnplanned: true,
     }
     dragWeekFromDay.current = null
+    dragEmail.current = null
     e.dataTransfer.effectAllowed = 'move'
+  }
+
+  function onEmailDragStart(e: React.DragEvent, message: any) {
+    dragEmail.current = message
+    dragWeekTask.current = null
+    dragWeekFromDay.current = null
+    e.dataTransfer.effectAllowed = 'copy'
   }
 
   function onColDragOver(e: React.DragEvent, dayIdx: number) {
@@ -344,6 +445,15 @@ export default function CalendrierPage() {
   async function onColDrop(e: React.DragEvent, dayIdx: number) {
     e.preventDefault()
     setDragOverDay(null)
+
+    // Cas 1 : drop d'un courriel → ouvrir popup
+    if (dragEmail.current) {
+      setDropEmailModal({ message: dragEmail.current, dayIdx })
+      dragEmail.current = null
+      return
+    }
+
+    // Cas 2 : drop d'une tâche
     const t = dragWeekTask.current
     if (!t) return
     if (dragWeekFromDay.current === dayIdx) {
@@ -355,6 +465,12 @@ export default function CalendrierPage() {
     dragWeekTask.current = null
     dragWeekFromDay.current = null
     loadWeek(user.id)
+  }
+
+  function openAddForm(dayIdx: number) {
+    setShowAddForm(dayIdx)
+    setNewTitle(''); setNewTime('09:00'); setNewDur('60')
+    setNewCat(categories[0]?.id || '')
   }
 
   const monday = getMonday()
@@ -566,7 +682,7 @@ export default function CalendrierPage() {
         {view === 'semaine' && (
           <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
             <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'auto', background:'white' }}>
-              {/* En-têtes de jours (sticky) */}
+              {/* En-têtes (sticky) avec bouton + Ajouter tâche */}
               <div style={{ display:'flex', position:'sticky', top:0, background:'white', zIndex:5, borderBottom:'0.5px solid rgba(0,0,0,0.08)' }}>
                 <div style={{ width:'48px', flexShrink:0, borderRight:'0.5px solid rgba(0,0,0,0.08)' }} />
                 {JOURS_LONG.map((jour, dayIdx) => {
@@ -575,9 +691,46 @@ export default function CalendrierPage() {
                   const isToday = ds === todayStr
                   return (
                     <div key={dayIdx}
-                      style={{ flex:1, minWidth:'160px', padding:'10px 12px', borderRight: dayIdx < 4 ? '0.5px solid rgba(0,0,0,0.08)' : 'none' }}>
+                      style={{ flex:1, minWidth:'180px', padding:'10px 12px', borderRight: dayIdx < 4 ? '0.5px solid rgba(0,0,0,0.08)' : 'none' }}>
                       <div style={{ fontSize:'13px', fontWeight:'500', color: isToday ? '#3B6D11' : '#111' }}>{jour}</div>
                       <div style={{ fontSize:'11px', color:'#888', marginTop:'2px' }}>{d.getDate()} {MOIS[d.getMonth()]}</div>
+
+                      {/* Bouton + Ajouter tâche / formulaire inline */}
+                      {showAddForm === dayIdx ? (
+                        <div style={{ marginTop:'8px', background:'#f9f9f7', border:'0.5px solid rgba(0,0,0,0.1)', borderRadius:'6px', padding:'8px' }}>
+                          <input autoFocus value={newTitle} onChange={e => setNewTitle(e.target.value)}
+                            placeholder="Titre de la tâche"
+                            style={{ width:'100%', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'4px', padding:'5px 7px', fontSize:'12px', outline:'none', marginBottom:'5px' }}
+                            onKeyDown={e => { if (e.key === 'Enter') createTaskInDay(dayIdx); if (e.key === 'Escape') setShowAddForm(null) }} />
+                          <div style={{ display:'flex', gap:'4px', marginBottom:'5px' }}>
+                            <input type="time" value={newTime} onChange={e => setNewTime(e.target.value)}
+                              style={{ flex:1, border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'4px', padding:'4px 6px', fontSize:'11px', outline:'none' }} />
+                            <input type="number" value={newDur} onChange={e => setNewDur(e.target.value)} min="5" step="5"
+                              style={{ width:'60px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'4px', padding:'4px 6px', fontSize:'11px', outline:'none' }} />
+                            <span style={{ fontSize:'10px', color:'#888', alignSelf:'center' }}>min</span>
+                          </div>
+                          <select value={newCat} onChange={e => setNewCat(e.target.value)}
+                            style={{ width:'100%', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'4px', padding:'4px 6px', fontSize:'11px', outline:'none', marginBottom:'6px', background:'white' }}>
+                            <option value="">— Catégorie —</option>
+                            {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                          </select>
+                          <div style={{ display:'flex', gap:'4px', justifyContent:'flex-end' }}>
+                            <button onClick={() => setShowAddForm(null)}
+                              style={{ fontSize:'11px', padding:'4px 8px', border:'0.5px solid rgba(0,0,0,0.1)', borderRadius:'4px', background:'white', cursor:'pointer' }}>
+                              Annuler
+                            </button>
+                            <button onClick={() => createTaskInDay(dayIdx)}
+                              style={{ fontSize:'11px', padding:'4px 10px', background:'#F2E000', border:'none', borderRadius:'4px', fontWeight:'500', cursor:'pointer' }}>
+                              Ajouter
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button onClick={() => openAddForm(dayIdx)}
+                          style={{ marginTop:'6px', width:'100%', padding:'5px', fontSize:'11px', color:'#888', background:'transparent', border:'0.5px dashed rgba(0,0,0,0.15)', borderRadius:'4px', cursor:'pointer' }}>
+                          + Ajouter tâche
+                        </button>
+                      )}
                     </div>
                   )
                 })}
@@ -604,7 +757,7 @@ export default function CalendrierPage() {
                       onDragOver={e => onColDragOver(e, dayIdx)}
                       onDragLeave={onColDragLeave}
                       onDrop={e => onColDrop(e, dayIdx)}
-                      style={{ flex:1, minWidth:'160px', position:'relative', height: HOURS.length*PPH+'px', borderRight: dayIdx < 4 ? '0.5px solid rgba(0,0,0,0.08)' : 'none', background: isOver ? 'rgba(242,224,0,0.08)' : 'transparent', transition:'background 0.1s' }}>
+                      style={{ flex:1, minWidth:'180px', position:'relative', height: HOURS.length*PPH+'px', borderRight: dayIdx < 4 ? '0.5px solid rgba(0,0,0,0.08)' : 'none', background: isOver ? 'rgba(242,224,0,0.08)' : 'transparent', transition:'background 0.1s' }}>
                       {HOURS.map((h,i) => (
                         <div key={h}>
                           <div style={{ position:'absolute', left:0, right:0, top:i*PPH, borderBottom:'0.5px solid rgba(0,0,0,0.06)' }} />
@@ -631,7 +784,9 @@ export default function CalendrierPage() {
                           <div key={`t-${t.id}-${idx}`} draggable
                             onDragStart={e => onWeekTaskDragStart(e, t, dayIdx)}
                             style={{ position:'absolute', left:'3px', right:'3px', top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 18px 3px 5px', overflow:'hidden', zIndex:3, cursor:'grab', background:'#EAF3DE', color:'#27500A', borderLeft:`3px solid ${t.color || '#3B6D11'}` }}>
-                            <div style={{ fontSize:'10px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}</div>
+                            <div style={{ fontSize:'10px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                              {t.gmail_message_id && '📧 '}{t.title.split('\n')[0]}
+                            </div>
                             <div style={{ fontSize:'9px', opacity:0.7, marginTop:'1px' }}>{minToStr(t.timeMin)}</div>
                             <div onClick={e => { e.stopPropagation(); removeFromCalendar(t.id) }}
                               style={{ position:'absolute', top:'2px', right:'3px', width:'14px', height:'14px', borderRadius:'50%', background:'rgba(0,0,0,0.1)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'10px', lineHeight:'1', color:'#27500A', opacity:0.6 }}
@@ -648,30 +803,94 @@ export default function CalendrierPage() {
               </div>
             </div>
 
-            <div style={{ width:'280px', flexShrink:0, background:'#f9f9f7', display:'flex', flexDirection:'column', borderLeft:'0.5px solid rgba(0,0,0,0.1)', overflowY:'auto' }}>
-              <div style={{ padding:'10px 12px', borderBottom:'0.5px solid rgba(0,0,0,0.08)', fontSize:'10px', fontWeight:'500', color:'#777', textTransform:'uppercase', letterSpacing:'0.5px', background:'white' }}>
-                Tâches à planifier
+            {/* Panneau droit avec onglets */}
+            <div style={{ width:'320px', flexShrink:0, background:'#f9f9f7', display:'flex', flexDirection:'column', borderLeft:'0.5px solid rgba(0,0,0,0.1)' }}>
+              {/* Onglets */}
+              <div style={{ display:'flex', background:'white', borderBottom:'0.5px solid rgba(0,0,0,0.08)' }}>
+                <button onClick={() => setSidePanel('tasks')}
+                  style={{ flex:1, padding:'10px', fontSize:'11px', fontWeight:'500', textTransform:'uppercase', letterSpacing:'0.5px', border:'none', background: sidePanel==='tasks' ? '#f9f9f7' : 'transparent', color: sidePanel==='tasks' ? '#111' : '#888', borderBottom: sidePanel==='tasks' ? '2px solid #F2E000' : '2px solid transparent', cursor:'pointer' }}>
+                  Tâches ({unplanned.length})
+                </button>
+                <button onClick={() => setSidePanel('gmail')}
+                  style={{ flex:1, padding:'10px', fontSize:'11px', fontWeight:'500', textTransform:'uppercase', letterSpacing:'0.5px', border:'none', background: sidePanel==='gmail' ? '#f9f9f7' : 'transparent', color: sidePanel==='gmail' ? '#111' : '#888', borderBottom: sidePanel==='gmail' ? '2px solid #F2E000' : '2px solid transparent', cursor:'pointer' }}>
+                  Inbox Gmail
+                </button>
               </div>
-              <div style={{ padding:'8px', display:'flex', flexDirection:'column', gap:'6px' }}>
-                {unplanned.length === 0 && (
-                  <div style={{ textAlign:'center', fontSize:'11px', color:'#aaa', padding:'1.5rem' }}>Toutes les tâches sont planifiées !</div>
-                )}
-                {unplanned.map((t: any) => (
-                  <div key={t.id} draggable onDragStart={e => onWeekUnplannedDragStart(e, t)}
-                    style={{ background:'white', border:'0.5px solid rgba(0,0,0,0.1)', borderLeft:`3px solid ${t.category?.color || '#3B6D11'}`, borderRadius:'8px', padding:'9px 12px', cursor:'grab', userSelect:'none' }}>
-                    <div style={{ fontSize:'12px', fontWeight:'500', color:'#111' }}>{t.description}</div>
-                    <div style={{ fontSize:'11px', color:'#aaa', marginTop:'3px', display:'flex', gap:'8px' }}>
-                      <span>{t.category?.name || '–'}</span>
-                      {t.estimated_duration && <span>⏱ {t.estimated_duration}</span>}
-                    </div>
+
+              {/* Contenu de l'onglet actif */}
+              <div style={{ flex:1, overflowY:'auto' }}>
+                {sidePanel === 'tasks' && (
+                  <div style={{ padding:'8px', display:'flex', flexDirection:'column', gap:'6px' }}>
+                    {unplanned.length === 0 && (
+                      <div style={{ textAlign:'center', fontSize:'11px', color:'#aaa', padding:'1.5rem' }}>Toutes les tâches sont planifiées !</div>
+                    )}
+                    {unplanned.map((t: any) => (
+                      <div key={t.id} draggable onDragStart={e => onWeekUnplannedDragStart(e, t)}
+                        style={{ background:'white', border:'0.5px solid rgba(0,0,0,0.1)', borderLeft:`3px solid ${t.category?.color || '#3B6D11'}`, borderRadius:'8px', padding:'9px 12px', cursor:'grab', userSelect:'none' }}>
+                        <div style={{ fontSize:'12px', fontWeight:'500', color:'#111' }}>{t.description.split('\n')[0]}</div>
+                        <div style={{ fontSize:'11px', color:'#aaa', marginTop:'3px', display:'flex', gap:'8px' }}>
+                          <span>{t.category?.name || '–'}</span>
+                          {t.estimated_duration && <span>⏱ {t.estimated_duration}</span>}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
+
+                {sidePanel === 'gmail' && (
+                  <div style={{ padding:'8px', display:'flex', flexDirection:'column', gap:'6px' }}>
+                    {gmailLoading && <div style={{ textAlign:'center', fontSize:'11px', color:'#aaa', padding:'1.5rem' }}>Chargement...</div>}
+                    {!gmailLoading && gmailMessages.length === 0 && (
+                      <div style={{ textAlign:'center', fontSize:'11px', color:'#aaa', padding:'1.5rem' }}>Aucun courriel ou Gmail non connecté.</div>
+                    )}
+                    {gmailMessages.map((m: any) => (
+                      <div key={m.id} draggable onDragStart={e => onEmailDragStart(e, m)}
+                        style={{ background:'white', border:'0.5px solid rgba(0,0,0,0.1)', borderLeft:'3px solid #D93025', borderRadius:'8px', padding:'8px 10px', cursor:'grab', userSelect:'none' }}>
+                        <div style={{ fontSize:'11px', color:'#888', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{formatFrom(m.from)}</div>
+                        <div style={{ fontSize:'12px', fontWeight: m.unread ? '600' : '400', color:'#111', marginTop:'2px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{m.subject}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div style={{ fontSize:'11px', color:'#ccc', textAlign:'center', padding:'8px' }}>← Glissez une tâche vers un jour</div>
+              <div style={{ fontSize:'11px', color:'#ccc', textAlign:'center', padding:'8px', borderTop:'0.5px solid rgba(0,0,0,0.05)' }}>
+                ← Glissez vers un jour
+              </div>
             </div>
           </div>
         )}
       </div>
+
+      {/* Popup drop courriel */}
+      {dropEmailModal && (
+        <div onClick={() => setDropEmailModal(null)}
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:'white', borderRadius:'12px', padding:'1.25rem', width:'400px', maxWidth:'90vw', boxShadow:'0 20px 60px rgba(0,0,0,0.3)' }}>
+            <h3 style={{ fontSize:'14px', fontWeight:'500', marginBottom:'8px' }}>Créer une tâche depuis ce courriel</h3>
+            <div style={{ background:'#f9f9f7', border:'0.5px solid rgba(0,0,0,0.08)', borderRadius:'6px', padding:'10px', marginBottom:'14px' }}>
+              <div style={{ fontSize:'11px', color:'#888' }}>{formatFrom(dropEmailModal.message.from)}</div>
+              <div style={{ fontSize:'13px', fontWeight:'500', color:'#111', marginTop:'2px' }}>{dropEmailModal.message.subject}</div>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
+              <button onClick={() => createTaskFromEmail(dropEmailModal.message, dropEmailModal.dayIdx, false)}
+                style={{ padding:'10px', background:'#F2E000', border:'none', borderRadius:'8px', fontSize:'13px', fontWeight:'500', cursor:'pointer', textAlign:'left' }}>
+                Sujet seulement
+                <div style={{ fontSize:'11px', fontWeight:'400', color:'rgba(0,0,0,0.6)', marginTop:'2px' }}>Crée une tâche avec le titre du courriel</div>
+              </button>
+              <button onClick={() => createTaskFromEmail(dropEmailModal.message, dropEmailModal.dayIdx, true)}
+                style={{ padding:'10px', background:'white', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', fontSize:'13px', fontWeight:'500', cursor:'pointer', textAlign:'left' }}>
+                Sujet + lien vers le courriel
+                <div style={{ fontSize:'11px', fontWeight:'400', color:'#888', marginTop:'2px' }}>Inclut un lien pour ouvrir le courriel dans Gmail</div>
+              </button>
+              <button onClick={() => setDropEmailModal(null)}
+                style={{ padding:'8px', background:'transparent', border:'none', fontSize:'12px', color:'#888', cursor:'pointer' }}>
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {tooltip && (
         <div style={{ position:'fixed', left:tooltip.x, top:tooltip.y, background:'#111', color:'#F2E000', fontSize:'11px', padding:'3px 7px', borderRadius:'4px', pointerEvents:'none', zIndex:100 }}>
