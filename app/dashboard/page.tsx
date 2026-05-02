@@ -31,65 +31,70 @@ export default function DashboardPage() {
   const interval = useRef<any>(null)
   const taskWrapRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-  supabase.auth.getUser().then(({ data }) => {
-    if (!data.user) { window.location.href = '/login'; return }
-    setUser(data.user)
-    setIsAdmin(data.user.email === 'eric@grenier.qc.ca')
-    loadCategories(data.user.id)
-    loadEntries(data.user.id, new Date())
-    loadTasks(data.user.id)
-    setLoading(false)
+  // Modification d'une entrée existante
+  const [editEntry, setEditEntry] = useState<any>(null)
+  const [editDesc, setEditDesc] = useState('')
+  const [editStart, setEditStart] = useState('')
+  const [editEnd, setEditEnd] = useState('')
+  const [editCat, setEditCat] = useState('')
 
-    // Restaurer l'état du chrono depuis localStorage
-    const saved = localStorage.getItem('grenier-timer')
-    if (saved) {
-      try {
-        const s = JSON.parse(saved)
-        if (s.userId === data.user.id) {
-          setDescription(s.description || '')
-          setCatId(s.catId || '')
-          setStartTime(s.startTime || null)
-          if (s.running && s.startTime) {
-            // Recalcule le temps écoulé en tenant compte du temps écoulé pendant l'absence
-            const now = Date.now()
-            const lastTick = s.lastTick || now
-            const extra = Math.floor((now - lastTick) / 1000)
-            const newElapsed = (s.elapsed || 0) + extra
-            setElapsed(newElapsed)
-            setRunning(true)
-            setPaused(false)
-            interval.current = setInterval(() => setElapsed(e => e + 1), 1000)
-          } else if (s.paused) {
-            setElapsed(s.elapsed || 0)
-            setPaused(true)
-            setRunning(false)
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (!data.user) { window.location.href = '/login'; return }
+      setUser(data.user)
+      setIsAdmin(data.user.email === 'eric@grenier.qc.ca')
+      loadCategories(data.user.id)
+      loadEntries(data.user.id, new Date())
+      loadTasks(data.user.id)
+      setLoading(false)
+
+      // Restaurer l'état du chrono depuis localStorage
+      const saved = localStorage.getItem('grenier-timer')
+      if (saved) {
+        try {
+          const s = JSON.parse(saved)
+          if (s.userId === data.user.id) {
+            setDescription(s.description || '')
+            setCatId(s.catId || '')
+            setStartTime(s.startTime || null)
+            if (s.running && s.startTime) {
+              const now = Date.now()
+              const lastTick = s.lastTick || now
+              const extra = Math.floor((now - lastTick) / 1000)
+              const newElapsed = (s.elapsed || 0) + extra
+              setElapsed(newElapsed)
+              setRunning(true)
+              setPaused(false)
+              interval.current = setInterval(() => setElapsed(e => e + 1), 1000)
+            } else if (s.paused) {
+              setElapsed(s.elapsed || 0)
+              setPaused(true)
+              setRunning(false)
+            }
           }
-        }
-      } catch {}
-    }
-  })
-}, [])
+        } catch {}
+      }
+    })
+  }, [])
+
   // Sauvegarde l'état du chrono en continu
-useEffect(() => {
-  if (!user) return
-  if (running || paused) {
-    localStorage.setItem('grenier-timer', JSON.stringify({
-      userId: user.id,
-      description,
-      catId,
-      startTime,
-      elapsed,
-      running,
-      paused,
-      lastTick: Date.now(),
-    }))
-  } else {
-    setElapsed(0); setDescription(''); setStartTime(null)
-localStorage.removeItem('grenier-timer')
-loadEntries(user.id, date)
-  }
-}, [user, description, catId, startTime, elapsed, running, paused])
+  useEffect(() => {
+    if (!user) return
+    if (running || paused) {
+      localStorage.setItem('grenier-timer', JSON.stringify({
+        userId: user.id,
+        description,
+        catId,
+        startTime,
+        elapsed,
+        running,
+        paused,
+        lastTick: Date.now(),
+      }))
+    } else {
+      localStorage.removeItem('grenier-timer')
+    }
+  }, [user, description, catId, startTime, elapsed, running, paused])
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -125,7 +130,6 @@ loadEntries(user.id, date)
     setShowTaskList(false)
   }
 
-  // ▶ Démarre ou reprend après pause
   function startTimer() {
     if (!startTime) setStartTime(new Date().toISOString())
     setRunning(true)
@@ -133,14 +137,12 @@ loadEntries(user.id, date)
     interval.current = setInterval(() => setElapsed(e => e + 1), 1000)
   }
 
-  // ⏸ Pause sans sauvegarder
   function pauseTimer() {
     clearInterval(interval.current)
     setRunning(false)
     setPaused(true)
   }
 
-  // ⏹ Stop : sauvegarde l'entrée et réinitialise
   async function stopTimer() {
     clearInterval(interval.current)
     setRunning(false)
@@ -150,10 +152,10 @@ loadEntries(user.id, date)
 
   async function saveEntry() {
     if (!user || elapsed < 5) {
-  setElapsed(0); setStartTime(null); setDescription('')
-  localStorage.removeItem('grenier-timer')
-  return
-}
+      setElapsed(0); setStartTime(null); setDescription('')
+      localStorage.removeItem('grenier-timer')
+      return
+    }
     const endTime = new Date().toISOString()
     await supabase.from('time_entries').insert({
       user_id: user.id,
@@ -165,6 +167,7 @@ loadEntries(user.id, date)
       source: 'timer'
     })
     setElapsed(0); setDescription(''); setStartTime(null)
+    localStorage.removeItem('grenier-timer')
     loadEntries(user.id, date)
   }
 
@@ -179,6 +182,51 @@ loadEntries(user.id, date)
       duration: Math.floor((e.getTime() - s.getTime()) / 1000), source: 'manual'
     })
     setShowManual(false); setManualDesc(''); setManualStart(''); setManualEnd('')
+    loadEntries(user.id, date)
+  }
+
+  function openEditEntry(entry: any) {
+    setEditEntry(entry)
+    setEditDesc(entry.description || '')
+    setEditCat(entry.category_id || '')
+    if (entry.started_at) {
+      const d = new Date(entry.started_at)
+      setEditStart(`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`)
+    } else setEditStart('')
+    if (entry.ended_at) {
+      const d = new Date(entry.ended_at)
+      setEditEnd(`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`)
+    } else setEditEnd('')
+  }
+
+  async function saveEditedEntry() {
+    if (!editEntry || !editDesc.trim()) return
+    if (!editStart || !editEnd) {
+      alert('L\'heure de début et de fin sont requises')
+      return
+    }
+    const baseDate = new Date(editEntry.started_at)
+    const dateStr = baseDate.toISOString().split('T')[0]
+    const s = new Date(`${dateStr}T${editStart}`)
+    const e = new Date(`${dateStr}T${editEnd}`)
+    if (e.getTime() <= s.getTime()) {
+      alert('L\'heure de fin doit être après l\'heure de début')
+      return
+    }
+    await supabase.from('time_entries').update({
+      description: editDesc.trim(),
+      category_id: editCat || null,
+      started_at: s.toISOString(),
+      ended_at: e.toISOString(),
+      duration: Math.floor((e.getTime() - s.getTime()) / 1000),
+    }).eq('id', editEntry.id)
+    setEditEntry(null)
+    loadEntries(user.id, date)
+  }
+
+  async function deleteEntry(entryId: string) {
+    if (!confirm('Supprimer cette entrée ?')) return
+    await supabase.from('time_entries').delete().eq('id', entryId)
     loadEntries(user.id, date)
   }
 
@@ -200,7 +248,6 @@ loadEntries(user.id, date)
   const isToday = date.toDateString() === new Date().toDateString()
   const dayLabel = isToday ? "Aujourd'hui" : date.getDate() + ' ' + date.toLocaleString('fr-CA', { month: 'short' })
 
-  // État du chrono : 'idle' | 'running' | 'paused'
   const timerState = running ? 'running' : (paused ? 'paused' : 'idle')
 
   if (loading) return (
@@ -282,7 +329,6 @@ loadEntries(user.id, date)
             </select>
             <span style={{ fontSize:'18px', fontWeight: timerState === 'paused' ? '400' : '500', minWidth:'74px', textAlign:'right', fontVariantNumeric:'tabular-nums', color: timerState === 'paused' ? '#aaa' : '#111' }}>{fmt(elapsed)}</span>
 
-            {/* Boutons selon l'état */}
             {timerState === 'idle' && (
               <button onClick={startTimer} title="Démarrer"
                 style={{ width:'34px', height:'34px', borderRadius:'50%', background:'#F2E000', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -339,6 +385,20 @@ loadEntries(user.id, date)
                 </div>
                 <span style={{ fontSize:'12px', color:'#aaa', whiteSpace:'nowrap' }}>{fmtTime(e.started_at)} → {fmtTime(e.ended_at)}</span>
                 <span style={{ fontSize:'13px', fontWeight:'500', minWidth:'42px', textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{fmtH(e.duration || 0)}</span>
+                <div style={{ display:'flex', gap:'4px' }}>
+                  <div onClick={() => openEditEntry(e)} title="Modifier"
+                    style={{ width:'24px', height:'24px', borderRadius:'50%', background:'#f5f4f0', border:'0.5px solid rgba(0,0,0,0.1)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}
+                    onMouseEnter={ev => (ev.currentTarget as HTMLElement).style.background='#FEFDE6'}
+                    onMouseLeave={ev => (ev.currentTarget as HTMLElement).style.background='#f5f4f0'}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="#555" strokeWidth="1.5" strokeLinecap="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="#555" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                  </div>
+                  <div onClick={() => deleteEntry(e.id)} title="Supprimer"
+                    style={{ width:'24px', height:'24px', borderRadius:'50%', background:'#f5f4f0', border:'0.5px solid rgba(0,0,0,0.1)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}
+                    onMouseEnter={ev => (ev.currentTarget as HTMLElement).style.background='#FCEBEB'}
+                    onMouseLeave={ev => (ev.currentTarget as HTMLElement).style.background='#f5f4f0'}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M6 18L18 6" stroke="#A32D2D" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -397,6 +457,55 @@ loadEntries(user.id, date)
           </div>
         </div>
       </div>
+
+      {/* Popup d'édition d'une entrée */}
+      {editEntry && (
+        <div onClick={() => setEditEntry(null)}
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:'white', borderRadius:'12px', padding:'1.25rem', width:'440px', maxWidth:'90vw', boxShadow:'0 20px 60px rgba(0,0,0,0.3)' }}>
+            <h3 style={{ fontSize:'14px', fontWeight:'500', marginBottom:'14px' }}>Modifier l'entrée</h3>
+
+            <div style={{ marginBottom:'10px' }}>
+              <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'4px' }}>Description</label>
+              <input autoFocus value={editDesc} onChange={e => setEditDesc(e.target.value)}
+                style={{ width:'100%', padding:'8px 10px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none' }} />
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'8px', marginBottom:'14px' }}>
+              <div>
+                <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'4px' }}>Début</label>
+                <input type="time" value={editStart} onChange={e => setEditStart(e.target.value)}
+                  style={{ width:'100%', padding:'7px 8px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none' }} />
+              </div>
+              <div>
+                <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'4px' }}>Fin</label>
+                <input type="time" value={editEnd} onChange={e => setEditEnd(e.target.value)}
+                  style={{ width:'100%', padding:'7px 8px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none' }} />
+              </div>
+              <div>
+                <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'4px' }}>Catégorie</label>
+                <select value={editCat} onChange={e => setEditCat(e.target.value)}
+                  style={{ width:'100%', padding:'7px 8px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none', background:'white' }}>
+                  <option value="">–</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display:'flex', gap:'8px', justifyContent:'flex-end' }}>
+              <button onClick={() => setEditEntry(null)}
+                style={{ padding:'7px 14px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', background:'white', cursor:'pointer' }}>
+                Annuler
+              </button>
+              <button onClick={saveEditedEntry}
+                style={{ padding:'7px 16px', fontSize:'13px', background:'#F2E000', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>
+                Enregistrer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
