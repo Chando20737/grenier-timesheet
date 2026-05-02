@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
 const JOURS = ['Lun','Mar','Mer','Jeu','Ven']
+const JOURS_LONG = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi']
 const MOIS = ['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc']
 const HOURS = Array.from({length:11}, (_,i) => i+8)
 const PPH = 60, PPM = PPH/60
@@ -31,6 +32,7 @@ export default function CalendrierPage() {
   const [user, setUser] = useState<any>(null)
   const [isAdmin, setIsAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [view, setView] = useState<'jour' | 'semaine'>('jour')
   const [weekOffset, setWeekOffset] = useState(0)
   const [selectedDay, setSelectedDay] = useState(() => {
     const d = new Date().getDay()
@@ -40,11 +42,18 @@ export default function CalendrierPage() {
   const [placed, setPlaced] = useState<any[]>([])
   const [googleEvents, setGoogleEvents] = useState<any[]>([])
   const [googleConnected, setGoogleConnected] = useState(false)
+  // Vue semaine : tâches placées par jour (0=lun ... 4=ven) et événements Google par jour
+  const [weekTasks, setWeekTasks] = useState<any[][]>([[],[],[],[],[]])
+  const [weekGoogle, setWeekGoogle] = useState<any[][]>([[],[],[],[],[]])
   const [tooltip, setTooltip] = useState<{x:number,y:number,text:string}|null>(null)
   const areaRef = useRef<HTMLDivElement>(null)
   const dragTask = useRef<any>(null)
   const dragCalIdx = useRef<number|null>(null)
   const dragCalOffset = useRef(0)
+  // Vue semaine : tâche en cours de drag entre colonnes
+  const dragWeekTask = useRef<any>(null)
+  const dragWeekFromDay = useRef<number|null>(null)
+  const [dragOverDay, setDragOverDay] = useState<number|null>(null)
   const resizing = useRef<{idx:number,startY:number,origDur:number}|null>(null)
 
   useEffect(() => {
@@ -62,11 +71,14 @@ export default function CalendrierPage() {
   }, [])
 
   useEffect(() => {
-    if (user) {
+    if (!user) return
+    if (view === 'jour') {
       loadTasks(user.id)
       loadGoogleEvents(user.id)
+    } else {
+      loadWeek(user.id)
     }
-  }, [user, weekOffset, selectedDay])
+  }, [user, weekOffset, selectedDay, view])
 
   async function checkGoogleConnection(uid: string) {
     const { data } = await supabase.from('users').select('google_access_token').eq('id', uid).single()
@@ -102,7 +114,7 @@ export default function CalendrierPage() {
     const dateStr = d.toISOString().split('T')[0]
     try {
       const res = await fetch(`/api/calendar/sync?userId=${uid}&date=${dateStr}`)
-      if (res.status === 401) { return } // Ne pas changer googleConnected ici !
+      if (res.status === 401) return
       const data = await res.json()
       if (data.events) {
         setGoogleEvents(data.events.filter((e: any) => !e.allDay).map((e: any) => {
@@ -117,6 +129,68 @@ export default function CalendrierPage() {
       }
     } catch {
       setGoogleEvents([])
+    }
+  }
+
+  // Charge toute la semaine pour la vue kanban
+  async function loadWeek(uid: string) {
+    const monday = getMonday()
+    const dates = Array.from({length:5}, (_, i) => {
+      const d = new Date(monday); d.setDate(monday.getDate()+i)
+      return d.toISOString().split('T')[0]
+    })
+
+    // 1. Toutes les tâches non terminées avec scheduled_at sur ces 5 jours
+    const { data: allTasks } = await supabase.from('tasks')
+      .select('*, category:categories(name,color)')
+      .eq('user_id', uid)
+      .eq('is_done', false)
+      .order('scheduled_at', { ascending: true })
+
+    const tasksByDay: any[][] = [[],[],[],[],[]]
+    const stillUnplanned: any[] = []
+    ;(allTasks || []).forEach((t: any) => {
+      if (!t.scheduled_at) { stillUnplanned.push(t); return }
+      const dayIdx = dates.findIndex(ds => t.scheduled_at.startsWith(ds))
+      if (dayIdx >= 0) {
+        const dt = new Date(t.scheduled_at)
+        tasksByDay[dayIdx].push({
+          id: t.id,
+          title: t.description,
+          timeMin: dt.getHours()*60 + dt.getMinutes(),
+          dur: parseDuration(t.estimated_duration),
+          color: t.category?.color || '#3B6D11',
+          category: t.category?.name,
+          scheduled_at: t.scheduled_at,
+        })
+      } else {
+        stillUnplanned.push(t)
+      }
+    })
+    setWeekTasks(tasksByDay)
+    setUnplanned(stillUnplanned)
+
+    // 2. Événements Google pour les 5 jours en parallèle
+    try {
+      const results = await Promise.all(
+        dates.map(ds =>
+          fetch(`/api/calendar/sync?userId=${uid}&date=${ds}`)
+            .then(r => r.status === 401 ? { events: [] } : r.json())
+            .catch(() => ({ events: [] }))
+        )
+      )
+      const googleByDay: any[][] = results.map((data: any) =>
+        (data.events || []).filter((e: any) => !e.allDay).map((e: any) => {
+          const start = new Date(e.start)
+          const end = new Date(e.end)
+          const timeMin = start.getHours()*60 + start.getMinutes()
+          const dur = Math.round((end.getTime() - start.getTime()) / 60000)
+          return { id: e.id, title: e.title, timeMin, dur, type: 'agenda' }
+        })
+      )
+      setWeekGoogle(googleByDay)
+    } catch {
+      setWeekGoogle([[],[],[],[],[]])
     }
   }
 
@@ -148,8 +222,8 @@ export default function CalendrierPage() {
     d.setDate(m.getDate()+i); return d
   }
 
-  async function saveScheduled(taskId: string, timeMin: number, dur: number) {
-    const d = getDateForDay(selectedDay)
+  async function saveScheduled(taskId: string, timeMin: number, dur: number, dayIdx?: number) {
+    const d = getDateForDay(dayIdx ?? selectedDay)
     const h = Math.floor(timeMin/60), m = timeMin%60
     const scheduledAt = new Date(d)
     scheduledAt.setHours(h,m,0,0)
@@ -161,13 +235,15 @@ export default function CalendrierPage() {
 
   async function removeFromCalendar(taskId: string) {
     await supabase.from('tasks').update({ scheduled_at: null }).eq('id', taskId)
-    loadTasks(user.id)
+    if (view === 'jour') loadTasks(user.id)
+    else loadWeek(user.id)
   }
 
   function getMinFromY(y: number, offsetY = 0) {
     return Math.max(8*60, Math.min(17*60+55, snap5(8*60 + (y - offsetY) / PPM)))
   }
 
+  // ========= Drag handlers vue JOUR =========
   function onTaskDragStart(e: React.DragEvent, task: any) {
     dragTask.current = task; dragCalIdx.current = null
     e.dataTransfer.effectAllowed = 'move'
@@ -242,6 +318,52 @@ export default function CalendrierPage() {
     document.addEventListener('mouseup', onUp)
   }
 
+  // ========= Drag handlers vue SEMAINE =========
+  function onWeekTaskDragStart(e: React.DragEvent, task: any, fromDay: number) {
+    dragWeekTask.current = task
+    dragWeekFromDay.current = fromDay
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  function onWeekUnplannedDragStart(e: React.DragEvent, task: any) {
+    dragWeekTask.current = {
+      id: task.id,
+      title: task.description,
+      dur: parseDuration(task.estimated_duration),
+      timeMin: 9*60, // 9h00 par défaut
+      isUnplanned: true,
+    }
+    dragWeekFromDay.current = null
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  function onColDragOver(e: React.DragEvent, dayIdx: number) {
+    e.preventDefault()
+    setDragOverDay(dayIdx)
+  }
+
+  function onColDragLeave() {
+    setDragOverDay(null)
+  }
+
+  async function onColDrop(e: React.DragEvent, dayIdx: number) {
+    e.preventDefault()
+    setDragOverDay(null)
+    const t = dragWeekTask.current
+    if (!t) return
+    // Si replanifié vers le même jour, ne rien faire
+    if (dragWeekFromDay.current === dayIdx) {
+      dragWeekTask.current = null
+      return
+    }
+    // Conserver l'heure d'origine si déjà planifiée, sinon 9h
+    const timeMin = t.timeMin || 9*60
+    await saveScheduled(t.id, timeMin, t.dur, dayIdx)
+    dragWeekTask.current = null
+    dragWeekFromDay.current = null
+    loadWeek(user.id)
+  }
+
   const monday = getMonday()
   const friday = new Date(monday); friday.setDate(monday.getDate()+4)
   const todayStr = new Date().toISOString().split('T')[0]
@@ -287,8 +409,21 @@ export default function CalendrierPage() {
       {/* Main */}
       <div style={{ flex:1, display:'flex', flexDirection:'column', minHeight:'100vh', minWidth:0 }}>
         {/* Topbar */}
-        <div style={{ background:'#111', padding:'10px 1rem', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
+        <div style={{ background:'#111', padding:'10px 1rem', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0, gap:'12px' }}>
           <h1 style={{ fontSize:'15px', fontWeight:'500', color:'#F2E000' }}>Mon calendrier</h1>
+
+          {/* Toggle Jour / Semaine */}
+          <div style={{ display:'flex', background:'rgba(255,255,255,0.08)', borderRadius:'8px', padding:'2px' }}>
+            <button onClick={() => setView('jour')}
+              style={{ background: view==='jour' ? '#F2E000' : 'transparent', color: view==='jour' ? '#111' : 'rgba(255,255,255,0.7)', border:'none', borderRadius:'6px', padding:'5px 14px', fontSize:'12px', fontWeight:'500', cursor:'pointer' }}>
+              Jour
+            </button>
+            <button onClick={() => setView('semaine')}
+              style={{ background: view==='semaine' ? '#F2E000' : 'transparent', color: view==='semaine' ? '#111' : 'rgba(255,255,255,0.7)', border:'none', borderRadius:'6px', padding:'5px 14px', fontSize:'12px', fontWeight:'500', cursor:'pointer' }}>
+              Semaine
+            </button>
+          </div>
+
           {!googleConnected ? (
             <button onClick={connectGoogle}
               style={{ background:'white', border:'none', borderRadius:'8px', padding:'6px 12px', fontSize:'12px', fontWeight:'500', cursor:'pointer', color:'#111', display:'flex', alignItems:'center', gap:'6px' }}>
@@ -303,7 +438,7 @@ export default function CalendrierPage() {
           )}
         </div>
 
-        {/* Day tabs */}
+        {/* Day tabs (vue Jour) ou Week header (vue Semaine) */}
         <div style={{ background:'#1a1a1a', borderBottom:'0.5px solid rgba(255,255,255,0.08)', display:'flex', alignItems:'center', padding:'0 8px', gap:'8px', flexShrink:0 }}>
           <button onClick={() => { setWeekOffset(w => w-1); setSelectedDay(0) }}
             style={{ background:'#F2E000', border:'none', borderRadius:'6px', width:'28px', height:'28px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
@@ -314,10 +449,10 @@ export default function CalendrierPage() {
               const d = getDateForDay(i)
               const ds = d.toISOString().split('T')[0]
               const isToday = ds === todayStr
-              const isActive = i === selectedDay
+              const isActive = view === 'jour' && i === selectedDay
               return (
-                <div key={i} onClick={() => setSelectedDay(i)}
-                  style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', padding:'8px 4px', borderRadius:'8px', cursor:'pointer', background: isActive ? 'rgba(242,224,0,0.1)' : 'transparent' }}>
+                <div key={i} onClick={() => view === 'jour' && setSelectedDay(i)}
+                  style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', padding:'8px 4px', borderRadius:'8px', cursor: view === 'jour' ? 'pointer' : 'default', background: isActive ? 'rgba(242,224,0,0.1)' : 'transparent' }}>
                   <span style={{ fontSize:'10px', color: isActive ? '#F2E000' : 'rgba(255,255,255,0.45)', textTransform:'uppercase', letterSpacing:'0.5px' }}>{j}</span>
                   <span style={{ fontSize:'16px', fontWeight:'500', marginTop:'2px', color: isActive ? '#F2E000' : 'rgba(255,255,255,0.8)',
                     ...(isToday ? { background:'#F2E000', color:'#111', width:'28px', height:'28px', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'13px' } : {}) }}>
@@ -345,100 +480,190 @@ export default function CalendrierPage() {
           ))}
         </div>
 
-        {/* Colonnes */}
-        <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
-          {/* Calendrier */}
-          <div style={{ flex:1, display:'flex', flexDirection:'column', borderRight:'0.5px solid rgba(0,0,0,0.1)', background:'white', overflowY:'auto' }}>
-            <div style={{ display:'flex' }}>
-              <div style={{ width:'48px', flexShrink:0, borderRight:'0.5px solid rgba(0,0,0,0.08)' }}>
-                <div style={{ height:'8px' }} />
-                {HOURS.map(h => (
-                  <div key={h} style={{ height:'60px', borderBottom:'0.5px solid rgba(0,0,0,0.05)', display:'flex', alignItems:'flex-start', justifyContent:'flex-end', padding:'3px 6px 0 0', fontSize:'11px', color:'#bbb' }}>
-                    {h}:00
-                  </div>
-                ))}
-              </div>
-
-              <div ref={areaRef}
-                style={{ flex:1, position:'relative', height: HOURS.length*PPH+'px' }}
-                onDragOver={onAreaDragOver}
-                onDragLeave={onAreaDragLeave}
-                onDrop={onAreaDrop}>
-                {HOURS.map((h,i) => (
-                  <div key={h}>
-                    <div style={{ position:'absolute', left:0, right:0, top:i*PPH, borderBottom:'0.5px solid rgba(0,0,0,0.06)' }} />
-                    <div style={{ position:'absolute', left:0, right:0, top:i*PPH+30, borderBottom:'0.5px dashed rgba(0,0,0,0.04)' }} />
-                  </div>
-                ))}
-                <div id="cal-ghost" style={{ display:'none', position:'absolute', left:'4px', right:'4px', background:'rgba(242,224,0,0.25)', border:'1.5px dashed #D4B800', borderRadius:'5px', pointerEvents:'none', zIndex:3 }} />
-
-                {/* Événements Google */}
-                {googleEvents.map((t, idx) => {
-                  const top = (t.timeMin - 8*60) * PPM
-                  const height = Math.max(t.dur * PPM, 20)
-                  return (
-                    <div key={t.id || idx}
-                      style={{ position:'absolute', left:'4px', right:'4px', top:`${top}px`, height:`${height}px`, borderRadius:'5px', padding:'3px 6px', overflow:'hidden', zIndex:2, background:'#E6F1FB', color:'#0C447C', borderLeft:'3px solid #185FA5' }}>
-                      <div style={{ fontSize:'11px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}</div>
-                      <div style={{ fontSize:'10px', opacity:0.7, marginTop:'1px' }}>{minToStr(t.timeMin)} – {minToStr(t.timeMin+t.dur)}</div>
+        {/* === VUE JOUR === */}
+        {view === 'jour' && (
+          <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
+            <div style={{ flex:1, display:'flex', flexDirection:'column', borderRight:'0.5px solid rgba(0,0,0,0.1)', background:'white', overflowY:'auto' }}>
+              <div style={{ display:'flex' }}>
+                <div style={{ width:'48px', flexShrink:0, borderRight:'0.5px solid rgba(0,0,0,0.08)' }}>
+                  <div style={{ height:'8px' }} />
+                  {HOURS.map(h => (
+                    <div key={h} style={{ height:'60px', borderBottom:'0.5px solid rgba(0,0,0,0.05)', display:'flex', alignItems:'flex-start', justifyContent:'flex-end', padding:'3px 6px 0 0', fontSize:'11px', color:'#bbb' }}>
+                      {h}:00
                     </div>
-                  )
-                })}
-
-                {/* Tâches placées */}
-                {placed.map((t, idx) => {
-                  const top = (t.timeMin - 8*60) * PPM
-                  const height = Math.max(t.dur * PPM, 20)
-                  const colors = { bg:'#EAF3DE', text:'#27500A', border: t.color || '#3B6D11' }
-                  return (
-                    <div key={t.id || idx} draggable
-                      onDragStart={e => onCalDragStart(e, idx)}
-                      style={{ position:'absolute', left:'4px', right:'4px', top:`${top}px`, height:`${height}px`, borderRadius:'5px', padding:'3px 24px 14px 6px', overflow:'hidden', zIndex:2, cursor:'grab', background:colors.bg, color:colors.text, borderLeft:`3px solid ${colors.border}` }}>
-                      <div style={{ fontSize:'11px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}</div>
-                      <div style={{ fontSize:'10px', opacity:0.7, marginTop:'1px' }}>{minToStr(t.timeMin)} – {minToStr(t.timeMin+t.dur)}</div>
-                      <div onClick={e => { e.stopPropagation(); removeFromCalendar(t.id) }}
-                        style={{ position:'absolute', top:'3px', right:'4px', width:'16px', height:'16px', borderRadius:'50%', background:'rgba(0,0,0,0.12)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'12px', lineHeight:'1', color:colors.text, opacity:0.6 }}
-                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity='1'}
-                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity='0.6'}>
-                        ×
-                      </div>
-                      <div onMouseDown={e => startResize(e, idx)}
-                        style={{ position:'absolute', bottom:0, left:0, right:0, height:'10px', cursor:'ns-resize', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                        <div style={{ width:'24px', height:'3px', borderRadius:'2px', background:'currentColor', opacity:0.35 }} />
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* Tâches à planifier */}
-          <div style={{ width:'380px', flexShrink:0, background:'#f9f9f7', display:'flex', flexDirection:'column', overflowY:'auto' }}>
-            <div style={{ padding:'10px 12px', borderBottom:'0.5px solid rgba(0,0,0,0.08)', fontSize:'10px', fontWeight:'500', color:'#777', textTransform:'uppercase', letterSpacing:'0.5px', background:'white' }}>
-              Tâches à planifier
-            </div>
-            <div style={{ padding:'8px', display:'flex', flexDirection:'column', gap:'6px' }}>
-              {unplanned.length === 0 && (
-                <div style={{ textAlign:'center', fontSize:'11px', color:'#aaa', padding:'1.5rem' }}>Toutes les tâches sont planifiées !</div>
-              )}
-              {unplanned.map((t: any) => (
-                <div key={t.id} draggable onDragStart={e => onTaskDragStart(e, t)}
-                  style={{ background:'white', border:'0.5px solid rgba(0,0,0,0.1)', borderLeft:`3px solid ${t.category?.color || '#3B6D11'}`, borderRadius:'8px', padding:'9px 12px', cursor:'grab', userSelect:'none' }}>
-                  <div style={{ fontSize:'12px', fontWeight:'500', color:'#111' }}>{t.description}</div>
-                  <div style={{ fontSize:'11px', color:'#aaa', marginTop:'3px', display:'flex', gap:'8px' }}>
-                    <span>{t.category?.name || '–'}</span>
-                    {t.estimated_duration && <span>⏱ {t.estimated_duration}</span>}
-                  </div>
+                  ))}
                 </div>
-              ))}
+
+                <div ref={areaRef}
+                  style={{ flex:1, position:'relative', height: HOURS.length*PPH+'px' }}
+                  onDragOver={onAreaDragOver}
+                  onDragLeave={onAreaDragLeave}
+                  onDrop={onAreaDrop}>
+                  {HOURS.map((h,i) => (
+                    <div key={h}>
+                      <div style={{ position:'absolute', left:0, right:0, top:i*PPH, borderBottom:'0.5px solid rgba(0,0,0,0.06)' }} />
+                      <div style={{ position:'absolute', left:0, right:0, top:i*PPH+30, borderBottom:'0.5px dashed rgba(0,0,0,0.04)' }} />
+                    </div>
+                  ))}
+                  <div id="cal-ghost" style={{ display:'none', position:'absolute', left:'4px', right:'4px', background:'rgba(242,224,0,0.25)', border:'1.5px dashed #D4B800', borderRadius:'5px', pointerEvents:'none', zIndex:3 }} />
+
+                  {googleEvents.map((t, idx) => {
+                    const top = (t.timeMin - 8*60) * PPM
+                    const height = Math.max(t.dur * PPM, 20)
+                    return (
+                      <div key={t.id || idx}
+                        style={{ position:'absolute', left:'4px', right:'4px', top:`${top}px`, height:`${height}px`, borderRadius:'5px', padding:'3px 6px', overflow:'hidden', zIndex:2, background:'#E6F1FB', color:'#0C447C', borderLeft:'3px solid #185FA5' }}>
+                        <div style={{ fontSize:'11px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}</div>
+                        <div style={{ fontSize:'10px', opacity:0.7, marginTop:'1px' }}>{minToStr(t.timeMin)} – {minToStr(t.timeMin+t.dur)}</div>
+                      </div>
+                    )
+                  })}
+
+                  {placed.map((t, idx) => {
+                    const top = (t.timeMin - 8*60) * PPM
+                    const height = Math.max(t.dur * PPM, 20)
+                    const colors = { bg:'#EAF3DE', text:'#27500A', border: t.color || '#3B6D11' }
+                    return (
+                      <div key={t.id || idx} draggable
+                        onDragStart={e => onCalDragStart(e, idx)}
+                        style={{ position:'absolute', left:'4px', right:'4px', top:`${top}px`, height:`${height}px`, borderRadius:'5px', padding:'3px 24px 14px 6px', overflow:'hidden', zIndex:2, cursor:'grab', background:colors.bg, color:colors.text, borderLeft:`3px solid ${colors.border}` }}>
+                        <div style={{ fontSize:'11px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}</div>
+                        <div style={{ fontSize:'10px', opacity:0.7, marginTop:'1px' }}>{minToStr(t.timeMin)} – {minToStr(t.timeMin+t.dur)}</div>
+                        <div onClick={e => { e.stopPropagation(); removeFromCalendar(t.id) }}
+                          style={{ position:'absolute', top:'3px', right:'4px', width:'16px', height:'16px', borderRadius:'50%', background:'rgba(0,0,0,0.12)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'12px', lineHeight:'1', color:colors.text, opacity:0.6 }}
+                          onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity='1'}
+                          onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity='0.6'}>
+                          ×
+                        </div>
+                        <div onMouseDown={e => startResize(e, idx)}
+                          style={{ position:'absolute', bottom:0, left:0, right:0, height:'10px', cursor:'ns-resize', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                          <div style={{ width:'24px', height:'3px', borderRadius:'2px', background:'currentColor', opacity:0.35 }} />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
-            <div style={{ fontSize:'11px', color:'#ccc', textAlign:'center', padding:'8px' }}>← Glissez une tâche vers le calendrier</div>
+
+            {/* Tâches à planifier */}
+            <div style={{ width:'380px', flexShrink:0, background:'#f9f9f7', display:'flex', flexDirection:'column', overflowY:'auto' }}>
+              <div style={{ padding:'10px 12px', borderBottom:'0.5px solid rgba(0,0,0,0.08)', fontSize:'10px', fontWeight:'500', color:'#777', textTransform:'uppercase', letterSpacing:'0.5px', background:'white' }}>
+                Tâches à planifier
+              </div>
+              <div style={{ padding:'8px', display:'flex', flexDirection:'column', gap:'6px' }}>
+                {unplanned.length === 0 && (
+                  <div style={{ textAlign:'center', fontSize:'11px', color:'#aaa', padding:'1.5rem' }}>Toutes les tâches sont planifiées !</div>
+                )}
+                {unplanned.map((t: any) => (
+                  <div key={t.id} draggable onDragStart={e => onTaskDragStart(e, t)}
+                    style={{ background:'white', border:'0.5px solid rgba(0,0,0,0.1)', borderLeft:`3px solid ${t.category?.color || '#3B6D11'}`, borderRadius:'8px', padding:'9px 12px', cursor:'grab', userSelect:'none' }}>
+                    <div style={{ fontSize:'12px', fontWeight:'500', color:'#111' }}>{t.description}</div>
+                    <div style={{ fontSize:'11px', color:'#aaa', marginTop:'3px', display:'flex', gap:'8px' }}>
+                      <span>{t.category?.name || '–'}</span>
+                      {t.estimated_duration && <span>⏱ {t.estimated_duration}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize:'11px', color:'#ccc', textAlign:'center', padding:'8px' }}>← Glissez une tâche vers le calendrier</div>
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* === VUE SEMAINE === */}
+        {view === 'semaine' && (
+          <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
+            {/* 5 colonnes Lun-Ven */}
+            <div style={{ flex:1, display:'flex', overflow:'auto', background:'#f5f4f0' }}>
+              {JOURS_LONG.map((jour, dayIdx) => {
+                const d = getDateForDay(dayIdx)
+                const ds = d.toISOString().split('T')[0]
+                const isToday = ds === todayStr
+                const dayTasks = weekTasks[dayIdx] || []
+                const dayGoogle = weekGoogle[dayIdx] || []
+                // Combiner et trier par heure
+                const combined = [
+                  ...dayTasks.map(t => ({ ...t, kind: 'task' })),
+                  ...dayGoogle.map(t => ({ ...t, kind: 'google' })),
+                ].sort((a,b) => a.timeMin - b.timeMin)
+
+                const isOver = dragOverDay === dayIdx
+
+                return (
+                  <div key={dayIdx}
+                    onDragOver={e => onColDragOver(e, dayIdx)}
+                    onDragLeave={onColDragLeave}
+                    onDrop={e => onColDrop(e, dayIdx)}
+                    style={{ flex:1, minWidth:'200px', display:'flex', flexDirection:'column', borderRight: dayIdx < 4 ? '0.5px solid rgba(0,0,0,0.08)' : 'none', background: isOver ? 'rgba(242,224,0,0.08)' : 'transparent', transition:'background 0.1s' }}>
+                    <div style={{ padding:'12px 14px', borderBottom:'0.5px solid rgba(0,0,0,0.08)', background:'white' }}>
+                      <div style={{ fontSize:'14px', fontWeight:'500', color: isToday ? '#3B6D11' : '#111' }}>{jour}</div>
+                      <div style={{ fontSize:'11px', color:'#888', marginTop:'2px' }}>{d.getDate()} {MOIS[d.getMonth()]}</div>
+                    </div>
+
+                    <div style={{ flex:1, padding:'8px', display:'flex', flexDirection:'column', gap:'6px', overflowY:'auto' }}>
+                      {combined.length === 0 && (
+                        <div style={{ textAlign:'center', fontSize:'11px', color:'#bbb', padding:'1rem 0' }}>—</div>
+                      )}
+                      {combined.map((item, i) => {
+                        if (item.kind === 'google') {
+                          return (
+                            <div key={`g-${item.id}-${i}`}
+                              style={{ background:'#E6F1FB', borderLeft:'3px solid #185FA5', borderRadius:'6px', padding:'7px 9px', fontSize:'12px', color:'#0C447C' }}>
+                              <div style={{ fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{item.title}</div>
+                              <div style={{ fontSize:'10px', opacity:0.7, marginTop:'2px' }}>{minToStr(item.timeMin)} – {minToStr(item.timeMin+item.dur)}</div>
+                            </div>
+                          )
+                        }
+                        return (
+                          <div key={`t-${item.id}-${i}`} draggable
+                            onDragStart={e => onWeekTaskDragStart(e, item, dayIdx)}
+                            style={{ background:'white', borderLeft:`3px solid ${item.color || '#3B6D11'}`, border:'0.5px solid rgba(0,0,0,0.08)', borderLeftWidth:'3px', borderRadius:'6px', padding:'7px 9px', fontSize:'12px', cursor:'grab', position:'relative' }}>
+                            <div style={{ fontWeight:'500', color:'#111', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', paddingRight:'18px' }}>{item.title}</div>
+                            <div style={{ fontSize:'10px', color:'#888', marginTop:'2px', display:'flex', gap:'6px' }}>
+                              <span>{minToStr(item.timeMin)}</span>
+                              {item.category && <span>· {item.category}</span>}
+                              <span>· {item.dur}min</span>
+                            </div>
+                            <div onClick={e => { e.stopPropagation(); removeFromCalendar(item.id) }}
+                              style={{ position:'absolute', top:'5px', right:'5px', width:'14px', height:'14px', borderRadius:'50%', background:'rgba(0,0,0,0.08)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'10px', color:'#666' }}>
+                              ×
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Tâches à planifier (vue semaine) */}
+            <div style={{ width:'280px', flexShrink:0, background:'#f9f9f7', display:'flex', flexDirection:'column', borderLeft:'0.5px solid rgba(0,0,0,0.1)', overflowY:'auto' }}>
+              <div style={{ padding:'10px 12px', borderBottom:'0.5px solid rgba(0,0,0,0.08)', fontSize:'10px', fontWeight:'500', color:'#777', textTransform:'uppercase', letterSpacing:'0.5px', background:'white' }}>
+                Tâches à planifier
+              </div>
+              <div style={{ padding:'8px', display:'flex', flexDirection:'column', gap:'6px' }}>
+                {unplanned.length === 0 && (
+                  <div style={{ textAlign:'center', fontSize:'11px', color:'#aaa', padding:'1.5rem' }}>Toutes les tâches sont planifiées !</div>
+                )}
+                {unplanned.map((t: any) => (
+                  <div key={t.id} draggable onDragStart={e => onWeekUnplannedDragStart(e, t)}
+                    style={{ background:'white', border:'0.5px solid rgba(0,0,0,0.1)', borderLeft:`3px solid ${t.category?.color || '#3B6D11'}`, borderRadius:'8px', padding:'9px 12px', cursor:'grab', userSelect:'none' }}>
+                    <div style={{ fontSize:'12px', fontWeight:'500', color:'#111' }}>{t.description}</div>
+                    <div style={{ fontSize:'11px', color:'#aaa', marginTop:'3px', display:'flex', gap:'8px' }}>
+                      <span>{t.category?.name || '–'}</span>
+                      {t.estimated_duration && <span>⏱ {t.estimated_duration}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize:'11px', color:'#ccc', textAlign:'center', padding:'8px' }}>← Glissez une tâche vers un jour</div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Tooltip */}
       {tooltip && (
         <div style={{ position:'fixed', left:tooltip.x, top:tooltip.y, background:'#111', color:'#F2E000', fontSize:'11px', padding:'3px 7px', borderRadius:'4px', pointerEvents:'none', zIndex:100 }}>
           {tooltip.text}
