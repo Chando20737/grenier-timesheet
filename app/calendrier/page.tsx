@@ -16,6 +16,8 @@ const RECURRENCES = [
   { value: 'monthly', label: 'Tous les mois' },
 ]
 
+const CAT_COLORS = ['#185FA5','#533AB7','#3B6D11','#854F0B','#A32D2D','#0F6E56','#9a8600','#633806']
+
 const navItems = [
   { href:'/dashboard', label:'Minuterie du jour', icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="13" r="8" stroke="currentColor" strokeWidth="1.5"/><path d="M12 9v4l2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
   { href:'/calendrier', label:'Mon calendrier', active:true, icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M3 9h18M9 3v6M15 3v6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
@@ -93,6 +95,10 @@ export default function CalendrierPage() {
   })
   const [newSubtask, setNewSubtask] = useState('')
 
+  const [showNewCatForm, setShowNewCatForm] = useState(false)
+  const [newCatName, setNewCatName] = useState('')
+  const [newCatColor, setNewCatColor] = useState('#3B6D11')
+
   const [eventDetails, setEventDetails] = useState<any | null>(null)
 
   const dragCalOffset = useRef(0)
@@ -135,6 +141,22 @@ export default function CalendrierPage() {
     const { data } = await supabase.from('categories').select('*')
       .or(`user_id.eq.${uid},is_global.eq.true`).order('name')
     setCategories(data || [])
+  }
+
+  async function createCategory() {
+    if (!newCatName.trim() || !user) return
+    const { data, error } = await supabase.from('categories').insert({
+      user_id: user.id,
+      name: newCatName.trim(),
+      color: newCatColor,
+      is_global: false,
+    }).select().single()
+    if (error || !data) return
+    await loadCategories(user.id)
+    setEditForm({ ...editForm, cat: data.id })
+    setShowNewCatForm(false)
+    setNewCatName('')
+    setNewCatColor('#3B6D11')
   }
 
   async function loadGmail(uid: string) {
@@ -378,6 +400,7 @@ export default function CalendrierPage() {
       subtasks: Array.isArray(t.subtasks) ? t.subtasks : [],
     })
     setNewSubtask('')
+    setShowNewCatForm(false)
   }
 
   async function saveEditedTask() {
@@ -922,11 +945,18 @@ export default function CalendrierPage() {
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px', marginBottom:'10px' }}>
               <div>
                 <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'4px' }}>Catégorie</label>
-                <select value={editForm.cat} onChange={e => setEditForm({...editForm, cat: e.target.value})}
-                  style={{ width:'100%', padding:'7px 8px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none', background:'white' }}>
-                  <option value="">–</option>
-                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                <div style={{ display:'flex', gap:'4px' }}>
+                  <select value={editForm.cat} onChange={e => setEditForm({...editForm, cat: e.target.value})}
+                    style={{ flex:1, padding:'7px 8px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none', background:'white' }}>
+                    <option value="">–</option>
+                    {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <button onClick={() => setShowNewCatForm(true)}
+                    title="Créer une nouvelle catégorie"
+                    style={{ padding:'7px 10px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', background:'white', cursor:'pointer', color:'#555' }}>
+                    +
+                  </button>
+                </div>
               </div>
               <div>
                 <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'4px' }}>Durée (min)</label>
@@ -935,6 +965,33 @@ export default function CalendrierPage() {
                   style={{ width:'100%', padding:'7px 8px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none' }} />
               </div>
             </div>
+
+            {/* Formulaire nouvelle catégorie inline */}
+            {showNewCatForm && (
+              <div style={{ background:'#f9f9f7', border:'0.5px solid rgba(0,0,0,0.1)', borderRadius:'8px', padding:'10px', marginBottom:'10px' }}>
+                <div style={{ fontSize:'11px', color:'#777', marginBottom:'6px', fontWeight:'500' }}>Nouvelle catégorie</div>
+                <input autoFocus value={newCatName} onChange={e => setNewCatName(e.target.value)}
+                  placeholder="Nom de la catégorie"
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); createCategory() } }}
+                  style={{ width:'100%', padding:'6px 8px', fontSize:'12px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none', marginBottom:'8px' }} />
+                <div style={{ display:'flex', gap:'6px', flexWrap:'wrap', marginBottom:'8px' }}>
+                  {CAT_COLORS.map(c => (
+                    <div key={c} onClick={() => setNewCatColor(c)}
+                      style={{ width:'20px', height:'20px', borderRadius:'50%', background:c, cursor:'pointer', border: newCatColor===c ? '2px solid #111' : '2px solid transparent' }} />
+                  ))}
+                </div>
+                <div style={{ display:'flex', gap:'6px', justifyContent:'flex-end' }}>
+                  <button onClick={() => { setShowNewCatForm(false); setNewCatName('') }}
+                    style={{ fontSize:'11px', padding:'4px 10px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', background:'white', cursor:'pointer' }}>
+                    Annuler
+                  </button>
+                  <button onClick={createCategory}
+                    style={{ fontSize:'11px', padding:'4px 12px', background:'#F2E000', border:'none', borderRadius:'6px', fontWeight:'500', cursor:'pointer' }}>
+                    Créer
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px', marginBottom:'10px' }}>
               <div>
@@ -1023,7 +1080,7 @@ export default function CalendrierPage() {
         </div>
       )}
 
-      {/* Popup détails d'un événement Google Agenda */}
+      {/* Popup détails événement Google Agenda */}
       {eventDetails && (
         <div onClick={() => setEventDetails(null)}
           style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200 }}>
