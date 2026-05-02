@@ -6,7 +6,7 @@ const supabase = createClient(
   process.env.SUPABASE_SECRET_KEY!
 )
 
-async function refreshToken(userId: string, refreshToken: string) {
+aasync function refreshToken(userId: string, refreshToken: string) {
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -18,10 +18,14 @@ async function refreshToken(userId: string, refreshToken: string) {
     }),
   })
   const data = await res.json()
-  if (!data.access_token) {
-    console.log('[gmail refresh] Google returned:', data)
-    return null
-  }
+  console.log('[gmail refresh] Google response:', JSON.stringify({
+    has_token: !!data.access_token,
+    scope: data.scope,
+    token_type: data.token_type,
+    expires_in: data.expires_in,
+    error: data.error,
+  }))
+  if (!data.access_token) return null
   await supabase.from('users').update({ google_access_token: data.access_token }).eq('id', userId)
   return data.access_token
 }
