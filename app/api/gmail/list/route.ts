@@ -18,7 +18,10 @@ async function refreshToken(userId: string, refreshToken: string) {
     }),
   })
   const data = await res.json()
-  if (!data.access_token) return null
+  if (!data.access_token) {
+    console.log('[gmail refresh] Google returned:', data)
+    return null
+  }
   await supabase.from('users').update({ google_access_token: data.access_token }).eq('id', userId)
   return data.access_token
 }
@@ -39,60 +42,81 @@ export async function GET(req: NextRequest) {
     .single()
 
   if (!user?.google_access_token) {
+    console.log('[gmail] not_connected for user', userId)
     return NextResponse.json({ error: 'not_connected' }, { status: 401 })
   }
 
   let accessToken = user.google_access_token
 
-  // 1. Lister les IDs des messages de l'inbox
-  const params = new URLSearchParams({
-  labelIds: 'INBOX',
-  q: '-in:trash -in:spam',
-  maxResults: '50',
-})
-if (pageToken) params.append('pageToken', pageToken)
-const listUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?${params}`
+  // 1. Lister les IDs des messages de l'inbox (en excluant trash et spam)
+  const listParams = new URLSearchParams({
+    labelIds: 'INBOX',
+    q: '-in:trash -in:spam',
+    maxResults: '50',
+  })
+  if (pageToken) listParams.append('pageToken', pageToken)
+  const listUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?${listParams}`
 
   const fetchList = (token: string) =>
     fetch(listUrl, { headers: { Authorization: `Bearer ${token}` } })
 
   let listRes = await fetchList(accessToken)
+  console.log('[gmail] initial list response:', listRes.status)
 
   if (listRes.status === 401 && user.google_refresh_token) {
+    console.log('[gmail] access token expired, refreshing...')
     accessToken = await refreshToken(userId, user.google_refresh_token)
     if (!accessToken) return NextResponse.json({ error: 'token_expired' }, { status: 401 })
     listRes = await fetchList(accessToken)
   }
 
+  if (!listRes.ok) {
+    const errBody = await listRes.text()
+    console.log('[gmail] list failed:', listRes.status, errBody)
+    return NextResponse.json({ error: 'gmail_list_failed', details: errBody }, { status: listRes.status })
+  }
+
   const listData = await listRes.json()
   const messageIds: { id: string }[] = listData.messages || []
 
-  // 2. Pour chaque message, récupérer les métadonnées (sujet, expéditeur, date)
+  if (messageIds.length === 0) {
+    return NextResponse.json({ messages: [], nextPageToken: null })
+  }
+
+  // 2. Pour chaque message, récupérer les métadonnées
   const messages = await Promise.all(
     messageIds.map(async ({ id }) => {
-      const res = await fetch(
-        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      )
-      const data = await res.json()
-      const headers = data.payload?.headers || []
-      const getHeader = (name: string) =>
-        headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value || ''
+      try {
+        const res = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        )
+        if (!res.ok) return null
+        const data = await res.json()
+        const headers = data.payload?.headers || []
+        const getHeader = (name: string) =>
+          headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value || ''
 
-      return {
-        id: data.id,
-        threadId: data.threadId,
-        subject: getHeader('Subject') || '(Sans sujet)',
-        from: getHeader('From'),
-        date: getHeader('Date'),
-        snippet: data.snippet || '',
-        unread: (data.labelIds || []).includes('UNREAD'),
+        return {
+          id: data.id,
+          threadId: data.threadId,
+          subject: getHeader('Subject') || '(Sans sujet)',
+          from: getHeader('From'),
+          date: getHeader('Date'),
+          snippet: data.snippet || '',
+          unread: (data.labelIds || []).includes('UNREAD'),
+        }
+      } catch {
+        return null
       }
     })
   )
 
+  // Filtrer les messages null (échecs de fetch)
+  const validMessages = messages.filter(m => m !== null)
+
   return NextResponse.json({
-    messages,
+    messages: validMessages,
     nextPageToken: listData.nextPageToken || null,
   })
 }
