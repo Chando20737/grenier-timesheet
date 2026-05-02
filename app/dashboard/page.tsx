@@ -299,7 +299,7 @@ export default function DashboardPage() {
           <div style={{ background:'white', border:'0.5px solid rgba(0,0,0,0.1)', borderRadius:'12px', padding:'12px 14px', display:'flex', alignItems:'center', gap:'10px', position:'relative' }}>
             <div ref={taskWrapRef} style={{ flex:1, position:'relative' }}>
               <input style={{ width:'100%', border:'none', background:'transparent', fontSize:'14px', outline:'none' }}
-                placeholder="Sur quoi travaillez-vous ?"
+                placeholder="Sur quoi travailles-tu ?"
                 value={description}
                 onChange={e => { setDescription(e.target.value); setShowTaskList(true) }}
                 onFocus={() => setShowTaskList(true)} />
