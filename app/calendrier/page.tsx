@@ -305,7 +305,7 @@ export default function CalendrierPage() {
 
         {/* Day tabs */}
         <div style={{ background:'#1a1a1a', borderBottom:'0.5px solid rgba(255,255,255,0.08)', display:'flex', alignItems:'center', padding:'0 8px', gap:'8px', flexShrink:0 }}>
-          <button onClick={() => setWeekOffset(w => w-1)}
+          <button onClick={() => { setWeekOffset(w => w-1); setSelectedDay(0) }}
             style={{ background:'#F2E000', border:'none', borderRadius:'6px', width:'28px', height:'28px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="#111" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
           </button>
@@ -330,7 +330,7 @@ export default function CalendrierPage() {
           <span style={{ fontSize:'11px', color:'rgba(255,255,255,0.5)', whiteSpace:'nowrap' }}>
             {monday.getDate()} – {friday.getDate()} {MOIS[friday.getMonth()]}
           </span>
-          <button onClick={() => setWeekOffset(w => w+1)}
+          <button onClick={() => { setWeekOffset(w => w+1); setSelectedDay(0) }}
             style={{ background:'#F2E000', border:'none', borderRadius:'6px', width:'28px', height:'28px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 18l6-6-6-6" stroke="#111" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
           </button>
