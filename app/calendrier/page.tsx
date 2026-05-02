@@ -287,14 +287,14 @@ export default function CalendrierPage() {
   }
 
   async function createTaskInDay(dayIdx: number) {
-  if (!newTitle.trim() || !user) return
-  const [hh, mm] = newTime.split(':').map(Number)
-  if (isNaN(hh) || isNaN(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) {
-    alert('Heure invalide. Format attendu : HH:MM (00:00 à 23:59)')
-    return
-  }
-  const d = getDateForDay(dayIdx)
-  d.setHours(hh, mm, 0, 0)
+    if (!newTitle.trim() || !user) return
+    const [hh, mm] = newTime.split(':').map(Number)
+    if (isNaN(hh) || isNaN(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) {
+      alert('Heure invalide. Format attendu : HH:MM (00:00 à 23:59)')
+      return
+    }
+    const d = getDateForDay(dayIdx)
+    d.setHours(hh, mm, 0, 0)
     await supabase.from('tasks').insert({
       user_id: user.id,
       description: newTitle.trim(),
@@ -309,20 +309,20 @@ export default function CalendrierPage() {
   }
 
   async function createTaskFromEmail() {
-  if (!user || !dropEmailModal || !emailForm.title.trim()) return
-  const [hh, mm] = emailForm.time.split(':').map(Number)
-  if (isNaN(hh) || isNaN(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) {
-    alert('Heure invalide. Format attendu : HH:MM (00:00 à 23:59)')
-    return
-  }
-  const { message, dayIdx } = dropEmailModal
-  let description = emailForm.title.trim()
-  if (emailForm.includeLink) {
-    const link = `https://mail.google.com/mail/u/0/#inbox/${message.id}`
-    description = `${description}\n\n📧 ${link}`
-  }
-  const d = getDateForDay(dayIdx)
-  d.setHours(hh, mm, 0, 0)
+    if (!user || !dropEmailModal || !emailForm.title.trim()) return
+    const [hh, mm] = emailForm.time.split(':').map(Number)
+    if (isNaN(hh) || isNaN(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) {
+      alert('Heure invalide. Format attendu : HH:MM (00:00 à 23:59)')
+      return
+    }
+    const { message, dayIdx } = dropEmailModal
+    let description = emailForm.title.trim()
+    if (emailForm.includeLink) {
+      const link = `https://mail.google.com/mail/u/0/#inbox/${message.id}`
+      description = `${description}\n\n📧 ${link}`
+    }
+    const d = getDateForDay(dayIdx)
+    d.setHours(hh, mm, 0, 0)
     await supabase.from('tasks').insert({
       user_id: user.id,
       description,
@@ -419,6 +419,7 @@ export default function CalendrierPage() {
   function onWeekTaskDragStart(e: React.DragEvent, task: any, fromDay: number) {
     dragWeekTask.current = task
     dragWeekFromDay.current = fromDay
+    dragCalOffset.current = e.nativeEvent.offsetY
     dragEmail.current = null
     e.dataTransfer.effectAllowed = 'move'
   }
@@ -432,6 +433,7 @@ export default function CalendrierPage() {
       isUnplanned: true,
     }
     dragWeekFromDay.current = null
+    dragCalOffset.current = 0
     dragEmail.current = null
     e.dataTransfer.effectAllowed = 'move'
   }
@@ -446,17 +448,48 @@ export default function CalendrierPage() {
   function onColDragOver(e: React.DragEvent, dayIdx: number) {
     e.preventDefault()
     setDragOverDay(dayIdx)
+
+    // Pas de ghost ni tooltip si on drag un courriel (le drop ouvre une popup)
+    if (dragEmail.current) return
+
+    const t = dragWeekTask.current
+    if (!t) return
+
+    // Calcule la position Y dans la colonne
+    const colEl = e.currentTarget as HTMLElement
+    const rect = colEl.getBoundingClientRect()
+    const y = e.clientY - rect.top
+    const dur = t.dur || 60
+    const offsetY = dragWeekFromDay.current !== null ? dragCalOffset.current : 0
+    const min = getMinFromY(y, offsetY)
+
+    setTooltip({ x: e.clientX+12, y: e.clientY-10, text: minToStr(min)+' – '+minToStr(min+dur) })
+
+    const ghost = document.getElementById(`week-ghost-${dayIdx}`)
+    if (ghost) {
+      ghost.style.top = (min - 8*60) * PPM + 'px'
+      ghost.style.height = Math.max(dur * PPM, 10) + 'px'
+      ghost.style.display = 'block'
+    }
   }
 
-  function onColDragLeave() {
+  function onColDragLeave(e: React.DragEvent, dayIdx: number) {
+    const colEl = e.currentTarget as HTMLElement
+    if (e.relatedTarget && colEl.contains(e.relatedTarget as Node)) return
     setDragOverDay(null)
+    setTooltip(null)
+    const ghost = document.getElementById(`week-ghost-${dayIdx}`)
+    if (ghost) ghost.style.display = 'none'
   }
 
   async function onColDrop(e: React.DragEvent, dayIdx: number) {
     e.preventDefault()
     setDragOverDay(null)
+    setTooltip(null)
+    const ghost = document.getElementById(`week-ghost-${dayIdx}`)
+    if (ghost) ghost.style.display = 'none'
 
-    // Cas 1 : drop d'un courriel → ouvrir popup avec formulaire pré-rempli
+    // Cas 1 : drop d'un courriel → ouvrir popup
     if (dragEmail.current) {
       const msg = dragEmail.current
       setEmailForm({
@@ -474,12 +507,15 @@ export default function CalendrierPage() {
     // Cas 2 : drop d'une tâche
     const t = dragWeekTask.current
     if (!t) return
-    if (dragWeekFromDay.current === dayIdx) {
-      dragWeekTask.current = null
-      return
-    }
-    const timeMin = t.timeMin || 9*60
-    await saveScheduled(t.id, timeMin, t.dur, dayIdx)
+
+    // Calcule la nouvelle heure depuis la position Y dans la colonne
+    const colEl = e.currentTarget as HTMLElement
+    const rect = colEl.getBoundingClientRect()
+    const y = e.clientY - rect.top
+    const offsetY = dragWeekFromDay.current !== null ? dragCalOffset.current : 0
+    const newTimeMin = getMinFromY(y, offsetY)
+
+    await saveScheduled(t.id, newTimeMin, t.dur, dayIdx)
     dragWeekTask.current = null
     dragWeekFromDay.current = null
     loadWeek(user.id)
@@ -772,15 +808,19 @@ export default function CalendrierPage() {
                   return (
                     <div key={dayIdx}
                       onDragOver={e => onColDragOver(e, dayIdx)}
-                      onDragLeave={onColDragLeave}
+                      onDragLeave={e => onColDragLeave(e, dayIdx)}
                       onDrop={e => onColDrop(e, dayIdx)}
-                      style={{ flex:1, minWidth:'180px', position:'relative', height: HOURS.length*PPH+'px', borderRight: dayIdx < 4 ? '0.5px solid rgba(0,0,0,0.08)' : 'none', background: isOver ? 'rgba(242,224,0,0.08)' : 'transparent', transition:'background 0.1s' }}>
+                      style={{ flex:1, minWidth:'180px', position:'relative', height: HOURS.length*PPH+'px', borderRight: dayIdx < 4 ? '0.5px solid rgba(0,0,0,0.08)' : 'none', background: isOver ? 'rgba(242,224,0,0.04)' : 'transparent', transition:'background 0.1s' }}>
                       {HOURS.map((h,i) => (
                         <div key={h}>
                           <div style={{ position:'absolute', left:0, right:0, top:i*PPH, borderBottom:'0.5px solid rgba(0,0,0,0.06)' }} />
                           <div style={{ position:'absolute', left:0, right:0, top:i*PPH+30, borderBottom:'0.5px dashed rgba(0,0,0,0.04)' }} />
                         </div>
                       ))}
+
+                      {/* Ghost de drop */}
+                      <div id={`week-ghost-${dayIdx}`}
+                        style={{ display:'none', position:'absolute', left:'3px', right:'3px', background:'rgba(242,224,0,0.25)', border:'1.5px dashed #D4B800', borderRadius:'4px', pointerEvents:'none', zIndex:4 }} />
 
                       {dayGoogle.map((t, idx) => {
                         const top = (t.timeMin - 8*60) * PPM
