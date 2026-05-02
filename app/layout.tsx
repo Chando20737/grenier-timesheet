@@ -3,8 +3,8 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 
 export const metadata = {
-  title: 'Grenier — Feuilles de temps',
-  description: 'Application de gestion des feuilles de temps pour l\'équipe Grenier',
+  title: 'Grenier — Gestionnaire de tâches',
+  description: 'Application de gestionnaire de tâches pour l\'équipe Grenier',
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
