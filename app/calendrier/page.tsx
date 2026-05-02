@@ -287,10 +287,14 @@ export default function CalendrierPage() {
   }
 
   async function createTaskInDay(dayIdx: number) {
-    if (!newTitle.trim() || !user) return
-    const [hh, mm] = newTime.split(':').map(Number)
-    const d = getDateForDay(dayIdx)
-    d.setHours(hh, mm, 0, 0)
+  if (!newTitle.trim() || !user) return
+  const [hh, mm] = newTime.split(':').map(Number)
+  if (isNaN(hh) || isNaN(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) {
+    alert('Heure invalide. Format attendu : HH:MM (00:00 à 23:59)')
+    return
+  }
+  const d = getDateForDay(dayIdx)
+  d.setHours(hh, mm, 0, 0)
     await supabase.from('tasks').insert({
       user_id: user.id,
       description: newTitle.trim(),
@@ -305,16 +309,20 @@ export default function CalendrierPage() {
   }
 
   async function createTaskFromEmail() {
-    if (!user || !dropEmailModal || !emailForm.title.trim()) return
-    const { message, dayIdx } = dropEmailModal
-    let description = emailForm.title.trim()
-    if (emailForm.includeLink) {
-      const link = `https://mail.google.com/mail/u/0/#inbox/${message.id}`
-      description = `${description}\n\n📧 ${link}`
-    }
-    const [hh, mm] = emailForm.time.split(':').map(Number)
-    const d = getDateForDay(dayIdx)
-    d.setHours(hh, mm, 0, 0)
+  if (!user || !dropEmailModal || !emailForm.title.trim()) return
+  const [hh, mm] = emailForm.time.split(':').map(Number)
+  if (isNaN(hh) || isNaN(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) {
+    alert('Heure invalide. Format attendu : HH:MM (00:00 à 23:59)')
+    return
+  }
+  const { message, dayIdx } = dropEmailModal
+  let description = emailForm.title.trim()
+  if (emailForm.includeLink) {
+    const link = `https://mail.google.com/mail/u/0/#inbox/${message.id}`
+    description = `${description}\n\n📧 ${link}`
+  }
+  const d = getDateForDay(dayIdx)
+  d.setHours(hh, mm, 0, 0)
     await supabase.from('tasks').insert({
       user_id: user.id,
       description,
