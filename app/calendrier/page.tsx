@@ -7,6 +7,15 @@ const MOIS = ['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov
 const HOURS = Array.from({length:11}, (_,i) => i+8)
 const PPH = 60, PPM = PPH/60
 
+const RECURRENCES = [
+  { value: '', label: 'Aucune' },
+  { value: 'daily', label: 'Tous les jours' },
+  { value: 'weekdays', label: 'Du lundi au vendredi' },
+  { value: 'weekly', label: 'Toutes les semaines' },
+  { value: 'biweekly', label: 'Toutes les 2 semaines' },
+  { value: 'monthly', label: 'Tous les mois' },
+]
+
 const navItems = [
   { href:'/dashboard', label:'Minuterie du jour', icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="13" r="8" stroke="currentColor" strokeWidth="1.5"/><path d="M12 9v4l2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
   { href:'/calendrier', label:'Mon calendrier', active:true, icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M3 9h18M9 3v6M15 3v6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
@@ -26,6 +35,29 @@ function parseDuration(s: string | null): number {
 function formatFrom(from: string) {
   const m = from.match(/^"?([^"<]+)"?\s*<.*>$/)
   return m ? m[1].trim() : from
+}
+function ymd(d: Date): string {
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth()+1).padStart(2,'0')
+  const dd = String(d.getDate()).padStart(2,'0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
+// Vérifie si une tâche récurrente doit apparaître à une date donnée
+function recurrenceMatches(recurrence: string, baseDate: Date, targetDate: Date): boolean {
+  if (targetDate < baseDate) return false
+  const diffDays = Math.floor((targetDate.getTime() - baseDate.getTime()) / (1000*60*60*24))
+  switch (recurrence) {
+    case 'daily': return true
+    case 'weekdays': {
+      const day = targetDate.getDay()
+      return day >= 1 && day <= 5
+    }
+    case 'weekly': return diffDays % 7 === 0
+    case 'biweekly': return diffDays % 14 === 0
+    case 'monthly': return targetDate.getDate() === baseDate.getDate()
+    default: return false
+  }
 }
 
 export default function CalendrierPage() {
@@ -51,6 +83,12 @@ export default function CalendrierPage() {
 
   const [dropEmailModal, setDropEmailModal] = useState<{ message: any, dayIdx: number } | null>(null)
   const [emailForm, setEmailForm] = useState({ title: '', time: '09:00', dur: '30', cat: '', includeLink: true })
+
+  // Édition d'une tâche
+  const [editTask, setEditTask] = useState<any>(null)
+  const [editForm, setEditForm] = useState({
+    title: '', cat: '', dur: '60', date: '', time: '', recurrence: '',
+  })
 
   const dragCalOffset = useRef(0)
   const dragWeekTask = useRef<any>(null)
@@ -112,8 +150,9 @@ export default function CalendrierPage() {
     const monday = getMonday()
     const dates = Array.from({length:5}, (_, i) => {
       const d = new Date(monday); d.setDate(monday.getDate()+i)
-      return d.toISOString().split('T')[0]
+      return d
     })
+    const dateStrs = dates.map(d => ymd(d))
 
     const { data: allTasks } = await supabase.from('tasks')
       .select('*, category:categories(name,color)')
@@ -121,17 +160,63 @@ export default function CalendrierPage() {
       .eq('is_done', false)
       .order('scheduled_at', { ascending: true })
 
+    // Charger les "occurrences" terminées/ignorées pour la semaine
+    const { data: occurrences } = await supabase.from('task_occurrences')
+      .select('*')
+      .in('occurrence_date', dateStrs)
+
+    const occMap = new Map<string, any>()
+    ;(occurrences || []).forEach((o: any) => {
+      occMap.set(`${o.task_id}_${o.occurrence_date}`, o)
+    })
+
     const tasksByDay: any[][] = [[],[],[],[],[]]
     const stillUnplanned: any[] = []
+
     ;(allTasks || []).forEach((t: any) => {
-      if (!t.scheduled_at) { stillUnplanned.push(t); return }
-      const dayIdx = dates.findIndex(ds => t.scheduled_at.startsWith(ds))
+      if (!t.scheduled_at) {
+        // Sans planification ET sans récurrence → tâches à planifier
+        if (!t.recurrence) stillUnplanned.push(t)
+        return
+      }
+
+      const baseDt = new Date(t.scheduled_at)
+
+      // Tâche récurrente : générer les occurrences pour chaque jour de la semaine
+      if (t.recurrence) {
+        dates.forEach((targetDate, dayIdx) => {
+          if (!recurrenceMatches(t.recurrence, baseDt, targetDate)) return
+
+          const dateStr = dateStrs[dayIdx]
+          const occKey = `${t.id}_${dateStr}`
+          const occ = occMap.get(occKey)
+          if (occ?.is_skipped || occ?.is_done) return
+
+          tasksByDay[dayIdx].push({
+            id: t.id,
+            occurrenceDate: dateStr,
+            isRecurring: true,
+            title: t.description,
+            timeMin: baseDt.getHours()*60 + baseDt.getMinutes(),
+            dur: parseDuration(t.estimated_duration),
+            color: t.category?.color || '#3B6D11',
+            category: t.category?.name,
+            scheduled_at: t.scheduled_at,
+            gmail_message_id: t.gmail_message_id,
+            recurrence: t.recurrence,
+          })
+        })
+        return
+      }
+
+      // Tâche non récurrente : afficher uniquement à sa date
+      const dayIdx = dateStrs.findIndex(ds => t.scheduled_at.startsWith(ds))
       if (dayIdx >= 0) {
-        const dt = new Date(t.scheduled_at)
         tasksByDay[dayIdx].push({
           id: t.id,
+          isRecurring: false,
           title: t.description,
-          timeMin: dt.getHours()*60 + dt.getMinutes(),
+          timeMin: baseDt.getHours()*60 + baseDt.getMinutes(),
           dur: parseDuration(t.estimated_duration),
           color: t.category?.color || '#3B6D11',
           category: t.category?.name,
@@ -142,12 +227,13 @@ export default function CalendrierPage() {
         stillUnplanned.push(t)
       }
     })
+
     setWeekTasks(tasksByDay)
     setUnplanned(stillUnplanned)
 
     try {
       const results = await Promise.all(
-        dates.map(ds =>
+        dateStrs.map(ds =>
           fetch(`/api/calendar/sync?userId=${uid}&date=${ds}`)
             .then(r => r.status === 401 ? { events: [] } : r.json())
             .catch(() => ({ events: [] }))
@@ -207,8 +293,17 @@ export default function CalendrierPage() {
     }).eq('id', taskId)
   }
 
-  async function removeFromCalendar(taskId: string) {
-    await supabase.from('tasks').update({ scheduled_at: null }).eq('id', taskId)
+  async function removeFromCalendar(t: any) {
+    // Si récurrente : on marque cette occurrence seulement comme "skipped"
+    if (t.isRecurring && t.occurrenceDate) {
+      await supabase.from('task_occurrences').upsert({
+        task_id: t.id,
+        occurrence_date: t.occurrenceDate,
+        is_skipped: true,
+      }, { onConflict: 'task_id,occurrence_date' })
+    } else {
+      await supabase.from('tasks').update({ scheduled_at: null }).eq('id', t.id)
+    }
     loadWeek(user.id)
   }
 
@@ -259,6 +354,71 @@ export default function CalendrierPage() {
       gmail_message_id: message.id,
     })
     setDropEmailModal(null)
+    loadWeek(user.id)
+  }
+
+  async function openEditTask(taskId: string) {
+    // On va chercher la tâche complète en DB (pour avoir tous les champs)
+    const { data: t } = await supabase.from('tasks')
+      .select('*, category:categories(id,name,color)')
+      .eq('id', taskId).single()
+    if (!t) return
+
+    let dateStr = '', timeStr = ''
+    if (t.scheduled_at) {
+      const d = new Date(t.scheduled_at)
+      dateStr = ymd(d)
+      timeStr = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+    }
+
+    setEditTask(t)
+    setEditForm({
+      title: t.description || '',
+      cat: t.category_id || '',
+      dur: String(parseDuration(t.estimated_duration)),
+      date: dateStr,
+      time: timeStr,
+      recurrence: t.recurrence || '',
+    })
+  }
+
+  async function saveEditedTask() {
+    if (!editTask || !editForm.title.trim()) return
+
+    let scheduledAt: string | null = null
+    if (editForm.date) {
+      const time = editForm.time || '09:00'
+      const [hh, mm] = time.split(':').map(Number)
+      if (isNaN(hh) || isNaN(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) {
+        alert('Heure invalide. Format attendu : HH:MM (00:00 à 23:59)')
+        return
+      }
+      const [yyyy, mo, dd] = editForm.date.split('-').map(Number)
+      const d = new Date(yyyy, mo - 1, dd, hh, mm, 0, 0)
+      scheduledAt = d.toISOString()
+    }
+
+    // Si on change la récurrence, on nettoie les anciennes occurrences "skipped"
+    if (editForm.recurrence !== editTask.recurrence) {
+      await supabase.from('task_occurrences').delete().eq('task_id', editTask.id)
+    }
+
+    await supabase.from('tasks').update({
+      description: editForm.title.trim(),
+      category_id: editForm.cat || null,
+      estimated_duration: editForm.dur + ' min',
+      scheduled_at: scheduledAt,
+      recurrence: editForm.recurrence || null,
+    }).eq('id', editTask.id)
+
+    setEditTask(null)
+    loadWeek(user.id)
+  }
+
+  async function deleteTask(taskId: string) {
+    if (!confirm('Supprimer définitivement cette tâche ?')) return
+    await supabase.from('tasks').delete().eq('id', taskId)
+    setEditTask(null)
     loadWeek(user.id)
   }
 
@@ -354,6 +514,14 @@ export default function CalendrierPage() {
     const t = dragWeekTask.current
     if (!t) return
 
+    // On n'autorise pas le drag des tâches récurrentes (elles ont une heure fixe)
+    if (t.isRecurring) {
+      alert('Pour modifier une tâche récurrente, utilisez le bouton « Modifier » (crayon).')
+      dragWeekTask.current = null
+      dragWeekFromDay.current = null
+      return
+    }
+
     const colEl = e.currentTarget as HTMLElement
     const rect = colEl.getBoundingClientRect()
     const y = e.clientY - rect.top
@@ -374,7 +542,7 @@ export default function CalendrierPage() {
 
   const monday = getMonday()
   const friday = new Date(monday); friday.setDate(monday.getDate()+4)
-  const todayStr = new Date().toISOString().split('T')[0]
+  const todayStr = ymd(new Date())
   const initials = user?.email?.split('@')[0].slice(0,2).toUpperCase() || 'ÉG'
 
   if (loading) return (
@@ -416,7 +584,6 @@ export default function CalendrierPage() {
 
       {/* Main */}
       <div style={{ flex:1, display:'flex', flexDirection:'column', minHeight:'100vh', minWidth:0 }}>
-        {/* Topbar */}
         <div style={{ background:'#111', padding:'10px 1rem', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0, gap:'12px' }}>
           <h1 style={{ fontSize:'15px', fontWeight:'500', color:'#F2E000' }}>Mon calendrier</h1>
 
@@ -434,7 +601,6 @@ export default function CalendrierPage() {
           )}
         </div>
 
-        {/* Navigation hebdomadaire */}
         <div style={{ background:'#1a1a1a', borderBottom:'0.5px solid rgba(255,255,255,0.08)', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 12px', flexShrink:0 }}>
           <button onClick={() => setWeekOffset(w => w-1)}
             style={{ background:'#F2E000', border:'none', borderRadius:'6px', width:'28px', height:'28px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
@@ -449,7 +615,6 @@ export default function CalendrierPage() {
           </button>
         </div>
 
-        {/* Légende */}
         <div style={{ display:'flex', gap:'12px', padding:'7px 1rem', background:'white', borderBottom:'0.5px solid rgba(0,0,0,0.08)', flexShrink:0 }}>
           {[{color:'#3B6D11',label:'Tâche'},{color:'#185FA5',label:'Google Agenda'}].map(l => (
             <div key={l.label} style={{ display:'flex', alignItems:'center', gap:'5px', fontSize:'11px', color:'#777' }}>
@@ -458,15 +623,13 @@ export default function CalendrierPage() {
           ))}
         </div>
 
-        {/* === VUE SEMAINE === */}
         <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
           <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'auto', background:'white' }}>
-            {/* En-têtes (sticky) */}
             <div style={{ display:'flex', position:'sticky', top:0, background:'white', zIndex:5, borderBottom:'0.5px solid rgba(0,0,0,0.08)' }}>
               <div style={{ width:'48px', flexShrink:0, borderRight:'0.5px solid rgba(0,0,0,0.08)' }} />
               {JOURS_LONG.map((jour, dayIdx) => {
                 const d = getDateForDay(dayIdx)
-                const ds = d.toISOString().split('T')[0]
+                const ds = ymd(d)
                 const isToday = ds === todayStr
                 return (
                   <div key={dayIdx}
@@ -514,7 +677,6 @@ export default function CalendrierPage() {
               })}
             </div>
 
-            {/* Grille horaire */}
             <div style={{ display:'flex', position:'relative' }}>
               <div style={{ width:'48px', flexShrink:0, borderRight:'0.5px solid rgba(0,0,0,0.08)' }}>
                 <div style={{ height:'8px' }} />
@@ -562,17 +724,25 @@ export default function CalendrierPage() {
                       const top = (t.timeMin - 8*60) * PPM
                       const height = Math.max(t.dur * PPM, 20)
                       return (
-                        <div key={`t-${t.id}-${idx}`} draggable
+                        <div key={`t-${t.id}-${t.occurrenceDate || ''}-${idx}`} draggable={!t.isRecurring}
                           onDragStart={e => onWeekTaskDragStart(e, t, dayIdx)}
-                          style={{ position:'absolute', left:'3px', right:'3px', top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 18px 3px 5px', overflow:'hidden', zIndex:3, cursor:'grab', background:'#EAF3DE', color:'#27500A', borderLeft:`3px solid ${t.color || '#3B6D11'}` }}>
+                          style={{ position:'absolute', left:'3px', right:'3px', top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 32px 3px 5px', overflow:'hidden', zIndex:3, cursor: t.isRecurring ? 'default' : 'grab', background:'#EAF3DE', color:'#27500A', borderLeft:`3px solid ${t.color || '#3B6D11'}` }}>
                           <div style={{ fontSize:'10px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
-                            {t.gmail_message_id && '📧 '}{t.title.split('\n')[0]}
+                            {t.isRecurring && '🔁 '}{t.gmail_message_id && '📧 '}{t.title.split('\n')[0]}
                           </div>
                           <div style={{ fontSize:'9px', opacity:0.7, marginTop:'1px' }}>{minToStr(t.timeMin)}</div>
-                          <div onClick={e => { e.stopPropagation(); removeFromCalendar(t.id) }}
+                          <div onClick={ev => { ev.stopPropagation(); openEditTask(t.id) }}
+                            title="Modifier"
+                            style={{ position:'absolute', top:'2px', right:'18px', width:'14px', height:'14px', borderRadius:'50%', background:'rgba(0,0,0,0.1)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:'#27500A', opacity:0.6 }}
+                            onMouseEnter={ev => (ev.currentTarget as HTMLElement).style.opacity='1'}
+                            onMouseLeave={ev => (ev.currentTarget as HTMLElement).style.opacity='0.6'}>
+                            <svg width="8" height="8" viewBox="0 0 24 24" fill="none"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="#27500A" strokeWidth="2" strokeLinecap="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="#27500A" strokeWidth="2" strokeLinecap="round"/></svg>
+                          </div>
+                          <div onClick={ev => { ev.stopPropagation(); removeFromCalendar(t) }}
+                            title={t.isRecurring ? "Ignorer cette occurrence" : "Retirer du calendrier"}
                             style={{ position:'absolute', top:'2px', right:'3px', width:'14px', height:'14px', borderRadius:'50%', background:'rgba(0,0,0,0.1)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'10px', lineHeight:'1', color:'#27500A', opacity:0.6 }}
-                            onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity='1'}
-                            onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity='0.6'}>
+                            onMouseEnter={ev => (ev.currentTarget as HTMLElement).style.opacity='1'}
+                            onMouseLeave={ev => (ev.currentTarget as HTMLElement).style.opacity='0.6'}>
                             ×
                           </div>
                         </div>
@@ -584,7 +754,7 @@ export default function CalendrierPage() {
             </div>
           </div>
 
-          {/* Panneau droit avec onglets */}
+          {/* Panneau droit */}
           <div style={{ width:'320px', flexShrink:0, background:'#f9f9f7', display:'flex', flexDirection:'column', borderLeft:'0.5px solid rgba(0,0,0,0.1)' }}>
             <div style={{ display:'flex', background:'white', borderBottom:'0.5px solid rgba(0,0,0,0.08)' }}>
               <button onClick={() => setSidePanel('tasks')}
@@ -612,11 +782,18 @@ export default function CalendrierPage() {
                   )}
                   {unplanned.map((t: any) => (
                     <div key={t.id} draggable onDragStart={e => onWeekUnplannedDragStart(e, t)}
-                      style={{ background:'white', border:'0.5px solid rgba(0,0,0,0.1)', borderLeft:`3px solid ${t.category?.color || '#3B6D11'}`, borderRadius:'8px', padding:'9px 12px', cursor:'grab', userSelect:'none' }}>
-                      <div style={{ fontSize:'12px', fontWeight:'500', color:'#111' }}>{t.description.split('\n')[0]}</div>
+                      style={{ background:'white', border:'0.5px solid rgba(0,0,0,0.1)', borderLeft:`3px solid ${t.category?.color || '#3B6D11'}`, borderRadius:'8px', padding:'9px 12px 9px 12px', cursor:'grab', userSelect:'none', position:'relative' }}>
+                      <div style={{ fontSize:'12px', fontWeight:'500', color:'#111', paddingRight:'24px' }}>{t.description.split('\n')[0]}</div>
                       <div style={{ fontSize:'11px', color:'#aaa', marginTop:'3px', display:'flex', gap:'8px' }}>
                         <span>{t.category?.name || '–'}</span>
                         {t.estimated_duration && <span>⏱ {t.estimated_duration}</span>}
+                      </div>
+                      <div onClick={ev => { ev.stopPropagation(); openEditTask(t.id) }}
+                        title="Modifier"
+                        style={{ position:'absolute', top:'8px', right:'8px', width:'22px', height:'22px', borderRadius:'50%', background:'#f5f4f0', border:'0.5px solid rgba(0,0,0,0.1)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}
+                        onMouseEnter={ev => (ev.currentTarget as HTMLElement).style.background='#FEFDE6'}
+                        onMouseLeave={ev => (ev.currentTarget as HTMLElement).style.background='#f5f4f0'}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="#555" strokeWidth="1.5" strokeLinecap="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="#555" strokeWidth="1.5" strokeLinecap="round"/></svg>
                       </div>
                     </div>
                   ))}
@@ -703,6 +880,90 @@ export default function CalendrierPage() {
                 style={{ padding:'8px 18px', fontSize:'13px', background:'#F2E000', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>
                 Créer la tâche
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Popup d'édition de tâche */}
+      {editTask && (
+        <div onClick={() => setEditTask(null)}
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:'white', borderRadius:'12px', padding:'1.25rem', width:'460px', maxWidth:'90vw', boxShadow:'0 20px 60px rgba(0,0,0,0.3)' }}>
+            <h3 style={{ fontSize:'14px', fontWeight:'500', marginBottom:'14px' }}>Modifier la tâche</h3>
+
+            <div style={{ marginBottom:'10px' }}>
+              <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'4px' }}>Titre</label>
+              <input autoFocus value={editForm.title} onChange={e => setEditForm({...editForm, title: e.target.value})}
+                style={{ width:'100%', padding:'8px 10px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none' }} />
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px', marginBottom:'10px' }}>
+              <div>
+                <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'4px' }}>Catégorie</label>
+                <select value={editForm.cat} onChange={e => setEditForm({...editForm, cat: e.target.value})}
+                  style={{ width:'100%', padding:'7px 8px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none', background:'white' }}>
+                  <option value="">–</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'4px' }}>Durée (min)</label>
+                <input type="number" value={editForm.dur} min="5" step="5"
+                  onChange={e => setEditForm({...editForm, dur: e.target.value})}
+                  style={{ width:'100%', padding:'7px 8px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none' }} />
+              </div>
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px', marginBottom:'10px' }}>
+              <div>
+                <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'4px' }}>Date</label>
+                <input type="date" value={editForm.date} onChange={e => setEditForm({...editForm, date: e.target.value})}
+                  style={{ width:'100%', padding:'7px 8px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none' }} />
+              </div>
+              <div>
+                <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'4px' }}>Heure</label>
+                <input type="time" value={editForm.time} onChange={e => setEditForm({...editForm, time: e.target.value})}
+                  disabled={!editForm.date}
+                  style={{ width:'100%', padding:'7px 8px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none', background: editForm.date ? 'white' : '#f9f9f7' }} />
+              </div>
+            </div>
+
+            <div style={{ marginBottom:'14px' }}>
+              <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'4px' }}>🔁 Récurrence</label>
+              <select value={editForm.recurrence} onChange={e => setEditForm({...editForm, recurrence: e.target.value})}
+                disabled={!editForm.date}
+                style={{ width:'100%', padding:'7px 8px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none', background: editForm.date ? 'white' : '#f9f9f7' }}>
+                {RECURRENCES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </select>
+              {!editForm.date && (
+                <div style={{ fontSize:'10px', color:'#aaa', marginTop:'4px' }}>
+                  Une date doit être définie pour activer la récurrence.
+                </div>
+              )}
+              {editForm.recurrence && (
+                <div style={{ fontSize:'10px', color:'#3B6D11', marginTop:'4px' }}>
+                  La tâche se répétera automatiquement selon cette fréquence.
+                </div>
+              )}
+            </div>
+
+            <div style={{ display:'flex', gap:'8px', justifyContent:'space-between', alignItems:'center' }}>
+              <button onClick={() => deleteTask(editTask.id)}
+                style={{ padding:'7px 14px', fontSize:'12px', border:'0.5px solid #E24B4A', borderRadius:'8px', background:'white', color:'#E24B4A', cursor:'pointer' }}>
+                Supprimer
+              </button>
+              <div style={{ display:'flex', gap:'8px' }}>
+                <button onClick={() => setEditTask(null)}
+                  style={{ padding:'7px 14px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', background:'white', cursor:'pointer' }}>
+                  Annuler
+                </button>
+                <button onClick={saveEditedTask}
+                  style={{ padding:'7px 16px', fontSize:'13px', background:'#F2E000', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>
+                  Enregistrer
+                </button>
+              </div>
             </div>
           </div>
         </div>
