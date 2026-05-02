@@ -61,14 +61,24 @@ export async function GET(req: NextRequest) {
     fetch(listUrl, { headers: { Authorization: `Bearer ${token}` } })
 
   let listRes = await fetchList(accessToken)
-  console.log('[gmail] initial list response:', listRes.status)
+console.log('[gmail] initial list response:', listRes.status, 'has_refresh:', !!user.google_refresh_token)
 
-  if (listRes.status === 401 && user.google_refresh_token) {
-    console.log('[gmail] access token expired, refreshing...')
-    accessToken = await refreshToken(userId, user.google_refresh_token)
-    if (!accessToken) return NextResponse.json({ error: 'token_expired' }, { status: 401 })
-    listRes = await fetchList(accessToken)
+if (listRes.status === 401) {
+  if (!user.google_refresh_token) {
+    console.log('[gmail] no refresh token available')
+    return NextResponse.json({ error: 'no_refresh_token' }, { status: 401 })
   }
+  console.log('[gmail] access token expired, refreshing...')
+  const newToken = await refreshToken(userId, user.google_refresh_token)
+  if (!newToken) {
+    console.log('[gmail] refresh failed')
+    return NextResponse.json({ error: 'token_expired' }, { status: 401 })
+  }
+  accessToken = newToken
+  console.log('[gmail] retrying with new token')
+  listRes = await fetchList(accessToken)
+  console.log('[gmail] retry response:', listRes.status)
+}
 
   if (!listRes.ok) {
     const errBody = await listRes.text()
