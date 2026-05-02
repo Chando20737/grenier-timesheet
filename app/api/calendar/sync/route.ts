@@ -7,6 +7,15 @@ const supabase = createClient(
 )
 
 async function refreshToken(userId: string, refreshToken: string) {
+  console.log('[refresh] Sending request with:', {
+    client_id_length: process.env.GOOGLE_CLIENT_ID?.length,
+    client_id_starts: process.env.GOOGLE_CLIENT_ID?.substring(0, 25),
+    client_secret_length: process.env.GOOGLE_CLIENT_SECRET?.length,
+    client_secret_starts: process.env.GOOGLE_CLIENT_SECRET?.substring(0, 12),
+    refresh_token_length: refreshToken?.length,
+    refresh_token_starts: refreshToken?.substring(0, 25),
+  })
+
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -29,7 +38,7 @@ async function refreshToken(userId: string, refreshToken: string) {
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const userId = searchParams.get('userId')
-  const dateStr = searchParams.get('date') // YYYY-MM-DD
+  const dateStr = searchParams.get('date')
 
   if (!userId || !dateStr) {
     return NextResponse.json({ error: 'Missing params' }, { status: 400 })
@@ -49,10 +58,11 @@ export async function GET(req: NextRequest) {
     userId,
     has_access: !!user?.google_access_token,
     has_refresh: !!user?.google_refresh_token,
+    access_length: user?.google_access_token?.length,
+    refresh_length: user?.google_refresh_token?.length,
   })
 
   if (!user?.google_access_token) {
-    console.log('[sync] not_connected for user', userId)
     return NextResponse.json({ error: 'not_connected' }, { status: 401 })
   }
 
@@ -72,7 +82,6 @@ export async function GET(req: NextRequest) {
   let res = await fetchEvents(accessToken)
   console.log('[sync] initial Google response:', res.status)
 
-  // Token expiré — rafraîchir
   if (res.status === 401 && user.google_refresh_token) {
     console.log('[sync] access token expired, refreshing...')
     accessToken = await refreshToken(userId, user.google_refresh_token)
