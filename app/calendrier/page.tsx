@@ -726,7 +726,7 @@ export default function CalendrierPage() {
                     })}
 
                     {dayTasks.map((t, idx) => {
-                      const top = (t.timeMin - 8*60) * PPM
+                      const top = (t.timeMin - 6*60) * PPM
                       const height = Math.max(t.dur * PPM, 20)
                       return (
                         <div key={`t-${t.id}-${t.occurrenceDate || ''}-${idx}`} draggable={!t.isRecurring}
