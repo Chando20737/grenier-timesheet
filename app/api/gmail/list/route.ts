@@ -20,6 +20,7 @@ async function refreshToken(userId: string, refreshToken: string) {
   const data = await res.json()
   console.log('[gmail refresh] Google response:', JSON.stringify({
     has_token: !!data.access_token,
+    token_length: data.access_token?.length,
     scope: data.scope,
     token_type: data.token_type,
     expires_in: data.expires_in,
@@ -52,6 +53,7 @@ export async function GET(req: NextRequest) {
   }
 
   let accessToken = user.google_access_token
+  console.log('[gmail] DB token length:', accessToken.length, 'starts with:', accessToken.substring(0, 20))
 
   // 1. Lister les IDs des messages de l'inbox (en excluant trash et spam)
   const listParams = new URLSearchParams({
@@ -80,7 +82,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'token_expired' }, { status: 401 })
     }
     accessToken = newToken
-    console.log('[gmail] retrying with new token')
+    console.log('[gmail] new token length:', accessToken.length, 'starts with:', accessToken.substring(0, 20))
     listRes = await fetchList(accessToken)
     console.log('[gmail] retry response:', listRes.status)
   }
