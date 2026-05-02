@@ -102,8 +102,9 @@ export default function CalendrierPage() {
     }
   }, [user, weekOffset, selectedDay, view])
 
+  // Recharge Gmail à chaque ouverture de l'onglet
   useEffect(() => {
-    if (sidePanel === 'gmail' && user && gmailMessages.length === 0 && !gmailLoading) {
+    if (sidePanel === 'gmail' && user && !gmailLoading) {
       loadGmail(user.id)
     }
   }, [sidePanel, user])
@@ -819,8 +820,15 @@ export default function CalendrierPage() {
                   Tâches ({unplanned.length})
                 </button>
                 <button onClick={() => setSidePanel('gmail')}
-                  style={{ flex:1, padding:'10px', fontSize:'11px', fontWeight:'500', textTransform:'uppercase', letterSpacing:'0.5px', border:'none', background: sidePanel==='gmail' ? '#f9f9f7' : 'transparent', color: sidePanel==='gmail' ? '#111' : '#888', borderBottom: sidePanel==='gmail' ? '2px solid #F2E000' : '2px solid transparent', cursor:'pointer' }}>
+                  style={{ flex:1, padding:'10px', fontSize:'11px', fontWeight:'500', textTransform:'uppercase', letterSpacing:'0.5px', border:'none', background: sidePanel==='gmail' ? '#f9f9f7' : 'transparent', color: sidePanel==='gmail' ? '#111' : '#888', borderBottom: sidePanel==='gmail' ? '2px solid #F2E000' : '2px solid transparent', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'6px' }}>
                   Inbox Gmail
+                  {sidePanel === 'gmail' && (
+                    <span onClick={(e) => { e.stopPropagation(); user && loadGmail(user.id) }}
+                      style={{ fontSize:'13px', color:'#888', cursor:'pointer', padding:'0 4px' }}
+                      title="Rafraîchir">
+                      ↻
+                    </span>
+                  )}
                 </button>
               </div>
 
