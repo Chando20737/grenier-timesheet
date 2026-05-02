@@ -22,21 +22,29 @@ export async function GET(req: NextRequest) {
 
   const redirectUri = 'https://grenier-timesheet.vercel.app/api/auth/callback/google'
   console.log('redirect_uri utilisé:', redirectUri)
+  console.log('client_id starts with:', process.env.GOOGLE_CLIENT_ID?.substring(0, 30))
+  console.log('client_secret starts with:', process.env.GOOGLE_CLIENT_SECRET?.substring(0, 12))
 
   const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       code,
-      client_id: '785771322332-oiflm3ig5j55uinj1geu7tcimsn7s28t.apps.googleusercontent.com',
-      client_secret: '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',
+      client_id: process.env.GOOGLE_CLIENT_ID!,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET!,
       redirect_uri: redirectUri,
       grant_type: 'authorization_code',
     }),
   })
 
   const tokens = await tokenRes.json()
-  console.log('tokens response:', JSON.stringify(tokens))
+  console.log('tokens response:', JSON.stringify({
+    has_access: !!tokens.access_token,
+    has_refresh: !!tokens.refresh_token,
+    scope: tokens.scope,
+    error: tokens.error,
+    error_description: tokens.error_description,
+  }))
 
   if (tokens.error) {
     console.error('Token error:', tokens.error, tokens.error_description)
@@ -47,7 +55,6 @@ export async function GET(req: NextRequest) {
     google_access_token: tokens.access_token,
     google_refresh_token: tokens.refresh_token || null,
   }).eq('id', state)
-
   console.log('DB update error:', dbError)
 
   return NextResponse.redirect(new URL('/calendrier?google=connected', req.url))
