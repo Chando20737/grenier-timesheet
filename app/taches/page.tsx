@@ -23,6 +23,9 @@ export default function TachesPage() {
   const [desc, setDesc] = useState('')
   const [catId, setCatId] = useState('')
   const [est, setEst] = useState('')
+  const [scheduledDate, setScheduledDate] = useState('')
+  const [scheduledTime, setScheduledTime] = useState('')
+  const [isDone, setIsDone] = useState(false)
   const [catName, setCatName] = useState('')
   const [catColor, setCatColor] = useState(COLORS[0])
   const [userId, setUserId] = useState('')
@@ -55,6 +58,8 @@ export default function TachesPage() {
   function openNew() {
     setEditTask(null)
     setDesc(''); setCatId(''); setEst('')
+    setScheduledDate(''); setScheduledTime('')
+    setIsDone(false)
     setShowModal(true)
   }
 
@@ -63,26 +68,63 @@ export default function TachesPage() {
     setDesc(t.description)
     setCatId(t.category_id || '')
     setEst(t.estimated_duration || '')
+    setIsDone(t.is_done || false)
+    if (t.scheduled_at) {
+      const d = new Date(t.scheduled_at)
+      const yyyy = d.getFullYear()
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const dd = String(d.getDate()).padStart(2, '0')
+      const hh = String(d.getHours()).padStart(2, '0')
+      const mi = String(d.getMinutes()).padStart(2, '0')
+      setScheduledDate(`${yyyy}-${mm}-${dd}`)
+      setScheduledTime(`${hh}:${mi}`)
+    } else {
+      setScheduledDate('')
+      setScheduledTime('')
+    }
     setShowModal(true)
   }
 
   async function saveTask() {
     if (!desc.trim() || !userId) return
+
+    // Construire scheduled_at depuis date + heure
+    let scheduledAt: string | null = null
+    if (scheduledDate) {
+      const time = scheduledTime || '09:00'
+      const [hh, mm] = time.split(':').map(Number)
+      if (isNaN(hh) || isNaN(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) {
+        alert('Heure invalide. Format attendu : HH:MM (00:00 à 23:59)')
+        return
+      }
+      const [yyyy, mo, dd] = scheduledDate.split('-').map(Number)
+      const d = new Date(yyyy, mo - 1, dd, hh, mm, 0, 0)
+      scheduledAt = d.toISOString()
+    }
+
     if (editTask) {
       await supabase.from('tasks').update({
         description: desc,
         category_id: catId || null,
         estimated_duration: est || null,
+        scheduled_at: scheduledAt,
+        is_done: isDone,
       }).eq('id', editTask.id)
     } else {
       await supabase.from('tasks').insert({
-        user_id: userId, description: desc,
+        user_id: userId,
+        description: desc,
         category_id: catId || null,
         estimated_duration: est || null,
+        scheduled_at: scheduledAt,
+        is_done: isDone,
         source: 'manual'
       })
     }
-    setShowModal(false); setDesc(''); setCatId(''); setEst(''); setEditTask(null)
+    setShowModal(false)
+    setDesc(''); setCatId(''); setEst('')
+    setScheduledDate(''); setScheduledTime('')
+    setIsDone(false); setEditTask(null)
     loadTasks(userId)
   }
 
@@ -101,6 +143,19 @@ export default function TachesPage() {
   async function deleteTask(id: string) {
     await supabase.from('tasks').delete().eq('id', id)
     loadTasks(userId)
+  }
+
+  function formatScheduled(iso: string | null) {
+    if (!iso) return null
+    const d = new Date(iso)
+    const today = new Date()
+    const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1)
+    const isToday = d.toDateString() === today.toDateString()
+    const isTomorrow = d.toDateString() === tomorrow.toDateString()
+    const time = d.toLocaleTimeString('fr-CA', { hour:'2-digit', minute:'2-digit' })
+    if (isToday) return `Aujourd'hui ${time}`
+    if (isTomorrow) return `Demain ${time}`
+    return d.toLocaleDateString('fr-CA', { day:'numeric', month:'short' }) + ' ' + time
   }
 
   const filtered = filter === 'toutes' ? tasks : tasks.filter(t => t.category?.name === filter)
@@ -184,10 +239,11 @@ export default function TachesPage() {
                 </div>
                 {/* Infos */}
                 <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:'13px', textDecoration: t.is_done ? 'line-through' : 'none', color: t.is_done ? '#aaa' : '#111' }}>{t.description}</div>
-                  <div style={{ display:'flex', gap:'8px', marginTop:'3px', alignItems:'center' }}>
+                  <div style={{ fontSize:'13px', textDecoration: t.is_done ? 'line-through' : 'none', color: t.is_done ? '#aaa' : '#111' }}>{t.description.split('\n')[0]}</div>
+                  <div style={{ display:'flex', gap:'8px', marginTop:'3px', alignItems:'center', flexWrap:'wrap' }}>
                     {t.category && <span style={{ fontSize:'11px', color: t.category.color }}>{t.category.name}</span>}
                     {t.estimated_duration && <span style={{ fontSize:'11px', color:'#aaa' }}>⏱ {t.estimated_duration}</span>}
+                    {t.scheduled_at && <span style={{ fontSize:'11px', color:'#3B6D11' }}>📅 {formatScheduled(t.scheduled_at)}</span>}
                     <span style={{ fontSize:'10px', padding:'2px 6px', borderRadius:'10px', background: t.source==='gmail' ? '#FCEBEB' : '#f5f4f0', color: t.source==='gmail' ? '#A32D2D' : '#aaa' }}>
                       {t.source === 'gmail' ? 'Gmail' : 'Manuel'}
                     </span>
@@ -217,21 +273,24 @@ export default function TachesPage() {
 
         {/* Modal nouvelle tâche / modification */}
         {showModal && (
-          <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50 }}>
-            <div style={{ background:'white', borderRadius:'16px', padding:'1.5rem', width:'340px' }} onClick={e => e.stopPropagation()}>
+          <div onClick={() => { setShowModal(false); setEditTask(null) }}
+            style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50 }}>
+            <div style={{ background:'white', borderRadius:'16px', padding:'1.5rem', width:'400px', maxWidth:'90vw' }} onClick={e => e.stopPropagation()}>
               <div style={{ fontSize:'14px', fontWeight:'500', marginBottom:'1rem' }}>
                 {editTask ? 'Modifier la tâche' : 'Nouvelle tâche'}
               </div>
+
               <div style={{ marginBottom:'10px' }}>
                 <label style={{ fontSize:'11px', color:'#777', display:'block', marginBottom:'4px' }}>Description</label>
                 <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="Ex: Préparer la réunion"
                   style={{ width:'100%', padding:'8px 10px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', outline:'none' }} />
               </div>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px', marginBottom:'12px' }}>
+
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px', marginBottom:'10px' }}>
                 <div>
                   <label style={{ fontSize:'11px', color:'#777', display:'block', marginBottom:'4px' }}>Catégorie</label>
                   <select value={catId} onChange={e => setCatId(e.target.value)}
-                    style={{ width:'100%', padding:'8px 10px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', outline:'none' }}>
+                    style={{ width:'100%', padding:'8px 10px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', outline:'none', background:'white' }}>
                     <option value="">–</option>
                     {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
@@ -242,6 +301,35 @@ export default function TachesPage() {
                     style={{ width:'100%', padding:'8px 10px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', outline:'none' }} />
                 </div>
               </div>
+
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px', marginBottom:'12px' }}>
+                <div>
+                  <label style={{ fontSize:'11px', color:'#777', display:'block', marginBottom:'4px' }}>Date planifiée</label>
+                  <input type="date" value={scheduledDate} onChange={e => setScheduledDate(e.target.value)}
+                    style={{ width:'100%', padding:'8px 10px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', outline:'none' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize:'11px', color:'#777', display:'block', marginBottom:'4px' }}>Heure</label>
+                  <input type="time" value={scheduledTime} onChange={e => setScheduledTime(e.target.value)}
+                    disabled={!scheduledDate}
+                    style={{ width:'100%', padding:'8px 10px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', outline:'none', background: scheduledDate ? 'white' : '#f9f9f7' }} />
+                </div>
+              </div>
+
+              {scheduledDate && (
+                <div style={{ marginBottom:'12px', textAlign:'right' }}>
+                  <button onClick={() => { setScheduledDate(''); setScheduledTime('') }}
+                    style={{ fontSize:'11px', color:'#888', background:'none', border:'none', cursor:'pointer', padding:0 }}>
+                    Retirer la date planifiée
+                  </button>
+                </div>
+              )}
+
+              <label style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'14px', cursor:'pointer', fontSize:'13px', color:'#555' }}>
+                <input type="checkbox" checked={isDone} onChange={e => setIsDone(e.target.checked)} />
+                Marquer comme terminée
+              </label>
+
               <div style={{ display:'flex', gap:'8px', justifyContent:'flex-end' }}>
                 <button onClick={() => { setShowModal(false); setEditTask(null) }}
                   style={{ padding:'7px 14px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', background:'none', cursor:'pointer' }}>Annuler</button>
@@ -256,8 +344,9 @@ export default function TachesPage() {
 
         {/* Modal nouvelle catégorie */}
         {showCatModal && (
-          <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50 }}>
-            <div style={{ background:'white', borderRadius:'16px', padding:'1.5rem', width:'300px' }}>
+          <div onClick={() => setShowCatModal(false)}
+            style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50 }}>
+            <div style={{ background:'white', borderRadius:'16px', padding:'1.5rem', width:'300px' }} onClick={e => e.stopPropagation()}>
               <div style={{ fontSize:'14px', fontWeight:'500', marginBottom:'4px' }}>Nouvelle catégorie</div>
               <div style={{ fontSize:'12px', color:'#aaa', marginBottom:'1rem' }}>Visible par vous seulement.</div>
               <div style={{ marginBottom:'12px' }}>
