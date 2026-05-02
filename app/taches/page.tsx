@@ -172,7 +172,7 @@ export default function TachesPage() {
           <span style={{ color:'#F2E000', fontSize:'16px', fontWeight:'500' }}>Grenier</span>
         </div>
         <div style={{ display:'flex', flexDirection:'column', gap:'2px', padding:'0 8px' }}>
-          {navItems.filter(item => !item.adminOnly || isAdmin).map(item => (
+          {navItems.map(item => (
             <div key={item.href} onClick={() => window.location.href=item.href}
               style={{ display:'flex', alignItems:'center', gap:'10px', padding:'9px 10px', borderRadius:'8px', cursor:'pointer', background: item.active ? '#F2E000' : 'transparent', color: item.active ? '#111' : 'rgba(255,255,255,0.6)' }}
               onMouseEnter={e => { if (!item.active) (e.currentTarget as HTMLElement).style.background='rgba(255,255,255,0.08)' }}
