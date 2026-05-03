@@ -95,9 +95,10 @@ export default function CalendrierPage() {
   const [editTask, setEditTask] = useState<any>(null)
   const [editForm, setEditForm] = useState({
     title: '', cat: '', dur: '60', date: '', time: '', recurrence: '',
-    notes: '', subtasks: [] as { id: string, text: string, done: boolean }[],
+    notes: '', subtasks: [] as { id: string, text: string, done: boolean, dur?: number }[],
   })
   const [newSubtask, setNewSubtask] = useState('')
+  const [newSubtaskDur, setNewSubtaskDur] = useState('')
 
   const [showNewCatForm, setShowNewCatForm] = useState(false)
   const [newCatName, setNewCatName] = useState('')
@@ -114,7 +115,6 @@ export default function CalendrierPage() {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const reloadingRef = useRef(false)
 
-  // Pour l'alignement du header avec la colonne d'heures
   const dayHeaderRef = useRef<HTMLDivElement>(null)
   const [headerHeight, setHeaderHeight] = useState(62)
 
@@ -157,7 +157,6 @@ export default function CalendrierPage() {
     }
   }, [sidePanel, user])
 
-  // Mesure la hauteur réelle de l'en-tête de jour pour aligner la colonne d'heures
   useEffect(() => {
     if (!dayHeaderRef.current) return
     const measure = () => {
@@ -452,6 +451,7 @@ export default function CalendrierPage() {
       subtasks: Array.isArray(t.subtasks) ? t.subtasks : [],
     })
     setNewSubtask('')
+    setNewSubtaskDur('')
     setShowNewCatForm(false)
   }
 
@@ -524,13 +524,37 @@ export default function CalendrierPage() {
     window.location.href = '/dashboard'
   }
 
+  // Calcule la somme des durées des sous-tâches qui en ont une
+  function sumSubtasksDur(subtasks: { dur?: number }[]): number {
+    return subtasks.reduce((sum, s) => sum + (s.dur || 0), 0)
+  }
+
+  // Si au moins une sous-tâche a une durée, met à jour automatiquement la durée principale
+  function updateMainDurFromSubtasks(subtasks: { dur?: number }[]) {
+    const total = sumSubtasksDur(subtasks)
+    if (total > 0) {
+      return String(total)
+    }
+    return editForm.dur
+  }
+
   function addSubtask() {
     if (!newSubtask.trim()) return
+    const durNum = newSubtaskDur ? parseInt(newSubtaskDur) : undefined
+    const newSub = {
+      id: uid(),
+      text: newSubtask.trim(),
+      done: false,
+      ...(durNum && durNum > 0 ? { dur: durNum } : {}),
+    }
+    const updatedSubtasks = [...editForm.subtasks, newSub]
     setEditForm({
       ...editForm,
-      subtasks: [...editForm.subtasks, { id: uid(), text: newSubtask.trim(), done: false }],
+      subtasks: updatedSubtasks,
+      dur: updateMainDurFromSubtasks(updatedSubtasks),
     })
     setNewSubtask('')
+    setNewSubtaskDur('')
   }
 
   function toggleSubtask(id: string) {
@@ -541,9 +565,11 @@ export default function CalendrierPage() {
   }
 
   function deleteSubtask(id: string) {
+    const updatedSubtasks = editForm.subtasks.filter(s => s.id !== id)
     setEditForm({
       ...editForm,
-      subtasks: editForm.subtasks.filter(s => s.id !== id),
+      subtasks: updatedSubtasks,
+      dur: updateMainDurFromSubtasks(updatedSubtasks),
     })
   }
 
@@ -551,6 +577,18 @@ export default function CalendrierPage() {
     setEditForm({
       ...editForm,
       subtasks: editForm.subtasks.map(s => s.id === id ? { ...s, text } : s),
+    })
+  }
+
+  function updateSubtaskDur(id: string, durStr: string) {
+    const durNum = durStr ? parseInt(durStr) : undefined
+    const updatedSubtasks = editForm.subtasks.map(s =>
+      s.id === id ? { ...s, dur: durNum && durNum > 0 ? durNum : undefined } : s
+    )
+    setEditForm({
+      ...editForm,
+      subtasks: updatedSubtasks,
+      dur: updateMainDurFromSubtasks(updatedSubtasks),
     })
   }
 
@@ -726,6 +764,7 @@ export default function CalendrierPage() {
   )
 
   const subtasksDoneCount = editForm.subtasks.filter(s => s.done).length
+  const subtasksTotalDur = sumSubtasksDur(editForm.subtasks)
   const firstDateStr = ymd(bufferDates[0])
 
   return (
@@ -812,9 +851,7 @@ export default function CalendrierPage() {
             <div ref={scrollContainerRef} onScroll={handleScroll}
               style={{ flex:1, overflowX:'auto', overflowY:'auto', position:'relative' }}>
               <div style={{ display:'flex', minWidth:'fit-content' }}>
-                {/* Colonne des heures (sticky à gauche) */}
                 <div style={{ width:'48px', flexShrink:0, position:'sticky', left:0, background:'white', zIndex:10, borderRight:'0.5px solid rgba(0,0,0,0.08)' }}>
-                  {/* Spacer aligné dynamiquement avec la hauteur du header de jour */}
                   <div style={{ height: headerHeight + 'px', borderBottom:'0.5px solid rgba(0,0,0,0.08)', position:'sticky', top:0, background:'white', zIndex:11 }} />
                   {HOURS.map(h => (
                     <div key={h} style={{ height:`${PPH}px`, borderBottom:'0.5px solid rgba(0,0,0,0.05)', display:'flex', alignItems:'flex-start', justifyContent:'flex-end', padding:'0 6px 0 0', fontSize:'11px', color:'#bbb' }}>
@@ -823,7 +860,6 @@ export default function CalendrierPage() {
                   ))}
                 </div>
 
-                {/* Colonnes des jours */}
                 <div style={{ display:'flex' }}>
                   {bufferDates.map(d => {
                     const ds = ymd(d)
@@ -942,7 +978,6 @@ export default function CalendrierPage() {
             </div>
           </div>
 
-          {/* Panneau droit */}
           <div style={{ width:'320px', flexShrink:0, background:'#f9f9f7', display:'flex', flexDirection:'column', borderLeft:'0.5px solid rgba(0,0,0,0.1)' }}>
             <div style={{ display:'flex', background:'white', borderBottom:'0.5px solid rgba(0,0,0,0.08)' }}>
               <button onClick={() => setSidePanel('tasks')}
@@ -1011,7 +1046,6 @@ export default function CalendrierPage() {
         </div>
       </div>
 
-      {/* Popup drop courriel */}
       {dropEmailModal && (
         <div onClick={() => setDropEmailModal(null)}
           style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200 }}>
@@ -1073,7 +1107,6 @@ export default function CalendrierPage() {
         </div>
       )}
 
-      {/* Popup d'édition de tâche */}
       {editTask && (
         <div onClick={() => setEditTask(null)}
           style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200 }}>
@@ -1104,7 +1137,9 @@ export default function CalendrierPage() {
                 </div>
               </div>
               <div>
-                <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'4px' }}>Durée (min)</label>
+                <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'4px' }}>
+                  Durée (min) {subtasksTotalDur > 0 && <span style={{ color:'#3B6D11', fontWeight:'500' }} title="Calculé à partir des sous-tâches">⚙ auto</span>}
+                </label>
                 <input type="number" value={editForm.dur} min="5" step="5"
                   onChange={e => setEditForm({...editForm, dur: e.target.value})}
                   style={{ width:'100%', padding:'7px 8px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none' }} />
@@ -1170,7 +1205,7 @@ export default function CalendrierPage() {
 
             <div style={{ marginBottom:'14px' }}>
               <label style={{ display:'block', fontSize:'11px', color:'#777', marginBottom:'6px' }}>
-                ✅ Sous-tâches {editForm.subtasks.length > 0 && <span style={{ color:'#aaa' }}>({subtasksDoneCount}/{editForm.subtasks.length})</span>}
+                ✅ Sous-tâches {editForm.subtasks.length > 0 && <span style={{ color:'#aaa' }}>({subtasksDoneCount}/{editForm.subtasks.length}{subtasksTotalDur > 0 && ` · ${subtasksTotalDur} min`})</span>}
               </label>
               {editForm.subtasks.length > 0 && (
                 <div style={{ display:'flex', flexDirection:'column', gap:'4px', marginBottom:'6px' }}>
@@ -1182,6 +1217,13 @@ export default function CalendrierPage() {
                       </div>
                       <input value={s.text} onChange={e => updateSubtaskText(s.id, e.target.value)}
                         style={{ flex:1, border:'none', background:'transparent', fontSize:'12px', outline:'none', textDecoration: s.done ? 'line-through' : 'none', color: s.done ? '#aaa' : '#111' }} />
+                      <input type="number" min="0" step="5"
+                        value={s.dur || ''}
+                        onChange={e => updateSubtaskDur(s.id, e.target.value)}
+                        placeholder="min"
+                        title="Durée en minutes"
+                        style={{ width:'48px', border:'0.5px solid rgba(0,0,0,0.1)', background:'white', fontSize:'11px', outline:'none', borderRadius:'4px', padding:'2px 4px', textAlign:'center' }} />
+                      <span style={{ fontSize:'10px', color:'#aaa' }}>min</span>
                       <div onClick={() => deleteSubtask(s.id)}
                         style={{ cursor:'pointer', color:'#aaa', fontSize:'14px', lineHeight:'1', padding:'0 4px' }}
                         onMouseEnter={e => (e.currentTarget as HTMLElement).style.color='#A32D2D'}
@@ -1197,6 +1239,12 @@ export default function CalendrierPage() {
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addSubtask() } }}
                   placeholder="Ajouter une sous-tâche..."
                   style={{ flex:1, padding:'6px 8px', fontSize:'12px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none' }} />
+                <input type="number" min="0" step="5"
+                  value={newSubtaskDur} onChange={e => setNewSubtaskDur(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addSubtask() } }}
+                  placeholder="min"
+                  title="Durée en minutes (optionnel)"
+                  style={{ width:'56px', padding:'6px 8px', fontSize:'12px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none', textAlign:'center' }} />
                 <button onClick={addSubtask}
                   style={{ padding:'6px 12px', fontSize:'12px', background:'#F2E000', border:'none', borderRadius:'6px', fontWeight:'500', cursor:'pointer' }}>
                   +
@@ -1232,7 +1280,6 @@ export default function CalendrierPage() {
         </div>
       )}
 
-      {/* Popup détails événement Google Agenda */}
       {eventDetails && (
         <div onClick={() => setEventDetails(null)}
           style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200 }}>
@@ -1320,33 +1367,3 @@ export default function CalendrierPage() {
 
             {eventDetails.description && (
               <div style={{ marginBottom:'12px' }}>
-                <div style={{ fontSize:'11px', color:'#777', marginBottom:'6px' }}>📝 Description</div>
-                <div style={{ fontSize:'12px', color:'#555', background:'#f9f9f7', border:'0.5px solid rgba(0,0,0,0.08)', borderRadius:'6px', padding:'10px', whiteSpace:'pre-wrap', maxHeight:'200px', overflowY:'auto' }}
-                  dangerouslySetInnerHTML={{ __html: eventDetails.description }} />
-              </div>
-            )}
-
-            <div style={{ display:'flex', gap:'8px', justifyContent:'space-between', alignItems:'center', marginTop:'14px' }}>
-              {eventDetails.htmlLink ? (
-                <a href={eventDetails.htmlLink} target="_blank" rel="noopener noreferrer"
-                  style={{ padding:'7px 14px', fontSize:'12px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', background:'white', color:'#555', textDecoration:'none', cursor:'pointer' }}>
-                  Ouvrir dans Google Agenda ↗
-                </a>
-              ) : <span />}
-              <button onClick={() => setEventDetails(null)}
-                style={{ padding:'7px 16px', fontSize:'13px', background:'#F2E000', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>
-                Fermer
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {tooltip && (
-        <div style={{ position:'fixed', left:tooltip.x, top:tooltip.y, background:'#111', color:'#F2E000', fontSize:'11px', padding:'3px 7px', borderRadius:'4px', pointerEvents:'none', zIndex:100 }}>
-          {tooltip.text}
-        </div>
-      )}
-    </div>
-  )
-}
