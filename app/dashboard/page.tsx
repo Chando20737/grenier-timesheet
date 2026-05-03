@@ -7,6 +7,24 @@ const navItems = [
   { href:'/calendrier', label:'Mon calendrier', icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M3 9h18M9 3v6M15 3v6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
 ]
 
+const MOIS_COURT = ['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc']
+
+function formatTaskDate(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const today = new Date()
+  today.setHours(0,0,0,0)
+  const taskDay = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const diffDays = Math.round((taskDay.getTime() - today.getTime()) / (1000*60*60*24))
+
+  if (diffDays === 0) return "Aujourd'hui"
+  if (diffDays === 1) return "Demain"
+  if (diffDays === -1) return "Hier"
+  if (diffDays < 0) return `Il y a ${Math.abs(diffDays)}j`
+  if (diffDays < 7) return `Dans ${diffDays}j`
+  return `${d.getDate()} ${MOIS_COURT[d.getMonth()]}`
+}
+
 export default function DashboardPage() {
   const [user, setUser] = useState<any>(null)
   const [isAdmin, setIsAdmin] = useState(false)
@@ -112,7 +130,12 @@ export default function DashboardPage() {
   }
 
   async function loadTasks(uid: string) {
-    const { data } = await supabase.from('tasks').select('*, category:categories(id,name,color)').eq('user_id', uid).eq('is_done', false).order('created_at', { ascending: false })
+    // Tri : tâches planifiées en premier (par scheduled_at croissant), non planifiées à la fin
+    const { data } = await supabase.from('tasks')
+      .select('*, category:categories(id,name,color)')
+      .eq('user_id', uid)
+      .eq('is_done', false)
+      .order('scheduled_at', { ascending: true, nullsFirst: false })
     setTasks(data || [])
   }
 
@@ -305,18 +328,27 @@ export default function DashboardPage() {
                 onFocus={() => setShowTaskList(true)} />
 
               {showTaskList && filteredTasks.length > 0 && (
-                <div style={{ position:'absolute', top:'calc(100% + 8px)', left:0, right:0, background:'white', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'10px', boxShadow:'0 4px 12px rgba(0,0,0,0.08)', maxHeight:'260px', overflowY:'auto', zIndex:10 }}>
-                  <div style={{ fontSize:'10px', fontWeight:'500', color:'#aaa', textTransform:'uppercase', letterSpacing:'0.7px', padding:'8px 12px 4px' }}>Mes tâches</div>
-                  {filteredTasks.map(t => (
-                    <div key={t.id} onClick={() => selectTask(t)}
-                      style={{ padding:'8px 12px', cursor:'pointer', display:'flex', alignItems:'center', gap:'8px', fontSize:'13px' }}
-                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.background='#f9f9f7'}
-                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.background='transparent'}>
-                      <div style={{ width:'7px', height:'7px', borderRadius:'50%', background: t.category?.color || '#ccc', flexShrink:0 }} />
-                      <span style={{ flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.description}</span>
-                      {t.category?.name && <span style={{ fontSize:'11px', color:'#999' }}>{t.category.name}</span>}
-                    </div>
-                  ))}
+                <div style={{ position:'absolute', top:'calc(100% + 8px)', left:0, right:0, background:'white', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'10px', boxShadow:'0 4px 12px rgba(0,0,0,0.08)', maxHeight:'320px', overflowY:'auto', zIndex:10 }}>
+                  <div style={{ fontSize:'10px', fontWeight:'500', color:'#aaa', textTransform:'uppercase', letterSpacing:'0.7px', padding:'8px 12px 4px' }}>Mes tâches à venir</div>
+                  {filteredTasks.map(t => {
+                    const dateLabel = formatTaskDate(t.scheduled_at)
+                    const isOverdue = t.scheduled_at && new Date(t.scheduled_at) < new Date(new Date().setHours(0,0,0,0))
+                    return (
+                      <div key={t.id} onClick={() => selectTask(t)}
+                        style={{ padding:'8px 12px', cursor:'pointer', display:'flex', alignItems:'center', gap:'8px', fontSize:'13px' }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background='#f9f9f7'}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background='transparent'}>
+                        <div style={{ width:'7px', height:'7px', borderRadius:'50%', background: t.category?.color || '#ccc', flexShrink:0 }} />
+                        <span style={{ flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.description}</span>
+                        {dateLabel && (
+                          <span style={{ fontSize:'10px', color: isOverdue ? '#A32D2D' : '#3B6D11', background: isOverdue ? '#FCEBEB' : '#EAF3DE', padding:'2px 6px', borderRadius:'10px', fontWeight:'500', whiteSpace:'nowrap' }}>
+                            {dateLabel}
+                          </span>
+                        )}
+                        {t.category?.name && <span style={{ fontSize:'11px', color:'#999', whiteSpace:'nowrap' }}>{t.category.name}</span>}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>
