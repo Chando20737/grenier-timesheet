@@ -1,11 +1,13 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const JOURS_LONG = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi']
+const JOURS_LONG = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi']
 const MOIS = ['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc']
 const HOURS = Array.from({length:14}, (_,i) => i+6)
 const PPH = 60, PPM = PPH/60
+const DAY_WIDTH = 220 // largeur d'une colonne jour en pixels
+const BUFFER_DAYS = 30 // 15 avant + 15 après le centre
 
 const RECURRENCES = [
   { value: '', label: 'Aucune' },
@@ -67,11 +69,13 @@ function uid() { return Math.random().toString(36).slice(2,10) }
 export default function CalendrierPage() {
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [weekOffset, setWeekOffset] = useState(0)
+  const [centerDate, setCenterDate] = useState<Date>(() => {
+    const d = new Date(); d.setHours(0,0,0,0); return d
+  })
   const [unplanned, setUnplanned] = useState<any[]>([])
   const [googleConnected, setGoogleConnected] = useState(false)
-  const [weekTasks, setWeekTasks] = useState<any[][]>([[],[],[],[],[]])
-  const [weekGoogle, setWeekGoogle] = useState<any[][]>([[],[],[],[],[]])
+  const [tasksByDate, setTasksByDate] = useState<Map<string, any[]>>(new Map())
+  const [googleByDate, setGoogleByDate] = useState<Map<string, any[]>>(new Map())
   const [categories, setCategories] = useState<any[]>([])
   const [tooltip, setTooltip] = useState<{x:number,y:number,text:string}|null>(null)
 
@@ -79,13 +83,13 @@ export default function CalendrierPage() {
   const [gmailMessages, setGmailMessages] = useState<any[]>([])
   const [gmailLoading, setGmailLoading] = useState(false)
 
-  const [showAddForm, setShowAddForm] = useState<number | null>(null)
+  const [showAddForm, setShowAddForm] = useState<string | null>(null)
   const [newTitle, setNewTitle] = useState('')
   const [newTime, setNewTime] = useState('09:00')
   const [newDur, setNewDur] = useState('60')
   const [newCat, setNewCat] = useState('')
 
-  const [dropEmailModal, setDropEmailModal] = useState<{ message: any, dayIdx: number } | null>(null)
+  const [dropEmailModal, setDropEmailModal] = useState<{ message: any, dateStr: string } | null>(null)
   const [emailForm, setEmailForm] = useState({ title: '', time: '09:00', dur: '30', cat: '', includeLink: true })
 
   const [editTask, setEditTask] = useState<any>(null)
@@ -103,9 +107,20 @@ export default function CalendrierPage() {
 
   const dragCalOffset = useRef(0)
   const dragWeekTask = useRef<any>(null)
-  const dragWeekFromDay = useRef<number|null>(null)
+  const dragWeekFromDate = useRef<string|null>(null)
   const dragEmail = useRef<any>(null)
-  const [dragOverDay, setDragOverDay] = useState<number|null>(null)
+  const [dragOverDate, setDragOverDate] = useState<string|null>(null)
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const reloadingRef = useRef(false)
+
+  // Génère les 30 dates du buffer autour de centerDate
+  const bufferDates: Date[] = []
+  for (let i = -Math.floor(BUFFER_DAYS/2); i < Math.ceil(BUFFER_DAYS/2); i++) {
+    const d = new Date(centerDate)
+    d.setDate(centerDate.getDate() + i)
+    bufferDates.push(d)
+  }
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -123,8 +138,18 @@ export default function CalendrierPage() {
 
   useEffect(() => {
     if (!user) return
-    loadWeek(user.id)
-  }, [user, weekOffset])
+    loadBuffer(user.id)
+  }, [user, centerDate])
+
+  // Auto-scroll vers la date courante (au centre du buffer) lors du chargement
+  useEffect(() => {
+    if (!loading && scrollContainerRef.current) {
+      // Position : 15 jours * largeur d'un jour, mais on veut centerDate visible à gauche
+      const todayIdx = Math.floor(BUFFER_DAYS/2)
+      // On scroll pour que la date du centre soit la première visible à gauche
+      scrollContainerRef.current.scrollLeft = todayIdx * DAY_WIDTH
+    }
+  }, [loading, centerDate])
 
   useEffect(() => {
     if (sidePanel === 'gmail' && user && !gmailLoading) {
@@ -176,15 +201,13 @@ export default function CalendrierPage() {
     }
   }
 
-  async function loadWeek(uid: string) {
-    const monday = getMonday()
-    const dates = Array.from({length:5}, (_, i) => {
-      const d = new Date(monday); d.setDate(monday.getDate()+i)
-      return d
-    })
-    const dateStrs = dates.map(d => ymd(d))
+  async function loadBuffer(uid: string) {
+    const dateStrs = bufferDates.map(d => ymd(d))
+    const firstDateISO = bufferDates[0].toISOString()
+    const lastDate = new Date(bufferDates[bufferDates.length-1])
+    lastDate.setHours(23,59,59,999)
+    const lastDateISO = lastDate.toISOString()
 
-    // Charger TOUTES les tâches (pas filtre is_done) pour pouvoir afficher les tâches faites
     const { data: allTasks } = await supabase.from('tasks')
       .select('*, category:categories(name,color)')
       .eq('user_id', uid)
@@ -199,12 +222,12 @@ export default function CalendrierPage() {
       occMap.set(`${o.task_id}_${o.occurrence_date}`, o)
     })
 
-    const tasksByDay: any[][] = [[],[],[],[],[]]
+    const newTasksByDate = new Map<string, any[]>()
+    dateStrs.forEach(ds => newTasksByDate.set(ds, []))
     const stillUnplanned: any[] = []
 
     ;(allTasks || []).forEach((t: any) => {
       if (!t.scheduled_at) {
-        // Tâche non planifiée (panneau de droite) — on n'affiche pas les déjà faites
         if (!t.recurrence && !t.is_done) stillUnplanned.push(t)
         return
       }
@@ -212,19 +235,18 @@ export default function CalendrierPage() {
       const baseDt = new Date(t.scheduled_at)
 
       if (t.recurrence) {
-        // Pour les récurrentes, ne rien faire si la tâche globale est marquée terminée
         if (t.is_done) return
 
-        dates.forEach((targetDate, dayIdx) => {
+        bufferDates.forEach((targetDate, idx) => {
           if (!recurrenceMatches(t.recurrence, baseDt, targetDate)) return
 
-          const dateStr = dateStrs[dayIdx]
+          const dateStr = dateStrs[idx]
           const occKey = `${t.id}_${dateStr}`
           const occ = occMap.get(occKey)
-          // Skipper si l'occurrence est skippée (mais PAS si is_done — on veut l'afficher barrée)
           if (occ?.is_skipped) return
 
-          tasksByDay[dayIdx].push({
+          const arr = newTasksByDate.get(dateStr) || []
+          arr.push({
             id: t.id,
             occurrenceDate: dateStr,
             isRecurring: true,
@@ -238,13 +260,15 @@ export default function CalendrierPage() {
             gmail_message_id: t.gmail_message_id,
             recurrence: t.recurrence,
           })
+          newTasksByDate.set(dateStr, arr)
         })
         return
       }
 
-      const dayIdx = dateStrs.findIndex(ds => t.scheduled_at.startsWith(ds))
-      if (dayIdx >= 0) {
-        tasksByDay[dayIdx].push({
+      const taskDateStr = t.scheduled_at.substring(0,10)
+      if (newTasksByDate.has(taskDateStr)) {
+        const arr = newTasksByDate.get(taskDateStr) || []
+        arr.push({
           id: t.id,
           isRecurring: false,
           isDone: !!t.is_done,
@@ -256,14 +280,17 @@ export default function CalendrierPage() {
           scheduled_at: t.scheduled_at,
           gmail_message_id: t.gmail_message_id,
         })
-      } else if (!t.is_done) {
+        newTasksByDate.set(taskDateStr, arr)
+      } else if (!t.is_done && new Date(t.scheduled_at) < bufferDates[0]) {
+        // Tâche dans le passé, hors buffer
         stillUnplanned.push(t)
       }
     })
 
-    setWeekTasks(tasksByDay)
+    setTasksByDate(newTasksByDate)
     setUnplanned(stillUnplanned)
 
+    // Charger les events Google en parallèle
     try {
       const results = await Promise.all(
         dateStrs.map(ds =>
@@ -272,8 +299,9 @@ export default function CalendrierPage() {
             .catch(() => ({ events: [] }))
         )
       )
-      const googleByDay: any[][] = results.map((data: any) =>
-        (data.events || []).filter((e: any) => !e.allDay).map((e: any) => {
+      const newGoogleByDate = new Map<string, any[]>()
+      results.forEach((data: any, idx: number) => {
+        const dayEvents = (data.events || []).filter((e: any) => !e.allDay).map((e: any) => {
           const start = new Date(e.start)
           const end = new Date(e.end)
           const timeMin = start.getHours()*60 + start.getMinutes()
@@ -286,10 +314,11 @@ export default function CalendrierPage() {
             organizer: e.organizer, attendees: e.attendees || [],
           }
         })
-      )
-      setWeekGoogle(googleByDay)
+        newGoogleByDate.set(dateStrs[idx], dayEvents)
+      })
+      setGoogleByDate(newGoogleByDate)
     } catch {
-      setWeekGoogle([[],[],[],[],[]])
+      setGoogleByDate(new Map())
     }
   }
 
@@ -298,7 +327,6 @@ export default function CalendrierPage() {
     if (!user) return
 
     if (task.isRecurring) {
-      // Pour une tâche récurrente : on toggle is_done sur task_occurrences
       const newDone = !task.isDone
       await supabase.from('task_occurrences').upsert({
         task_id: task.id,
@@ -306,11 +334,10 @@ export default function CalendrierPage() {
         is_done: newDone,
       }, { onConflict: 'task_id,occurrence_date' })
     } else {
-      // Pour une tâche normale : on toggle is_done sur tasks
       const newDone = !task.isDone
       await supabase.from('tasks').update({ is_done: newDone }).eq('id', task.id)
     }
-    loadWeek(user.id)
+    loadBuffer(user.id)
   }
 
   function connectGoogle() {
@@ -327,39 +354,29 @@ export default function CalendrierPage() {
     window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`
   }
 
-  function getMonday() {
-    const now = new Date()
-    const day = now.getDay()
-    const d = new Date(now)
-    d.setDate(now.getDate() - day + (day===0?-6:1) + weekOffset*7)
-    d.setHours(0,0,0,0)
-    return d
+  function getDateFromStr(dateStr: string): Date {
+    const [y, m, d] = dateStr.split('-').map(Number)
+    return new Date(y, m-1, d)
   }
 
-  function getDateForDay(i: number) {
-    const m = getMonday(); const d = new Date(m)
-    d.setDate(m.getDate()+i); return d
-  }
-
-  async function saveScheduled(taskId: string, timeMin: number, dur: number, dayIdx: number) {
-    const d = getDateForDay(dayIdx)
+  async function saveScheduled(taskId: string, timeMin: number, dur: number, dateStr: string) {
+    const d = getDateFromStr(dateStr)
     const h = Math.floor(timeMin/60), m = timeMin%60
-    const scheduledAt = new Date(d)
-    scheduledAt.setHours(h,m,0,0)
+    d.setHours(h,m,0,0)
     await supabase.from('tasks').update({
-      scheduled_at: scheduledAt.toISOString(),
+      scheduled_at: d.toISOString(),
       estimated_duration: dur+' min'
     }).eq('id', taskId)
   }
 
-  async function createTaskInDay(dayIdx: number) {
+  async function createTaskInDate(dateStr: string) {
     if (!newTitle.trim() || !user) return
     const [hh, mm] = newTime.split(':').map(Number)
     if (isNaN(hh) || isNaN(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) {
       alert('Heure invalide. Format attendu : HH:MM (00:00 à 23:59)')
       return
     }
-    const d = getDateForDay(dayIdx)
+    const d = getDateFromStr(dateStr)
     d.setHours(hh, mm, 0, 0)
     await supabase.from('tasks').insert({
       user_id: user.id,
@@ -371,7 +388,7 @@ export default function CalendrierPage() {
     })
     setShowAddForm(null)
     setNewTitle(''); setNewTime('09:00'); setNewDur('60'); setNewCat('')
-    loadWeek(user.id)
+    loadBuffer(user.id)
   }
 
   async function createTaskFromEmail() {
@@ -381,13 +398,13 @@ export default function CalendrierPage() {
       alert('Heure invalide. Format attendu : HH:MM (00:00 à 23:59)')
       return
     }
-    const { message, dayIdx } = dropEmailModal
+    const { message, dateStr } = dropEmailModal
     let description = emailForm.title.trim()
     if (emailForm.includeLink) {
       const link = `https://mail.google.com/mail/u/0/#inbox/${message.id}`
       description = `${description}\n\n📧 ${link}`
     }
-    const d = getDateForDay(dayIdx)
+    const d = getDateFromStr(dateStr)
     d.setHours(hh, mm, 0, 0)
     await supabase.from('tasks').insert({
       user_id: user.id,
@@ -399,7 +416,7 @@ export default function CalendrierPage() {
       gmail_message_id: message.id,
     })
     setDropEmailModal(null)
-    loadWeek(user.id)
+    loadBuffer(user.id)
   }
 
   async function openEditTask(taskId: string) {
@@ -461,14 +478,14 @@ export default function CalendrierPage() {
     }).eq('id', editTask.id)
 
     setEditTask(null)
-    loadWeek(user.id)
+    loadBuffer(user.id)
   }
 
   async function deleteTask(taskId: string) {
     if (!confirm('Supprimer définitivement cette tâche ?')) return
     await supabase.from('tasks').delete().eq('id', taskId)
     setEditTask(null)
-    loadWeek(user.id)
+    loadBuffer(user.id)
   }
 
   function startTimerFromTask() {
@@ -533,9 +550,9 @@ export default function CalendrierPage() {
     return Math.max(6*60, Math.min(19*60+55, snap5(6*60 + (y - offsetY) / PPM)))
   }
 
-  function onWeekTaskDragStart(e: React.DragEvent, task: any, fromDay: number) {
+  function onWeekTaskDragStart(e: React.DragEvent, task: any, fromDateStr: string) {
     dragWeekTask.current = task
-    dragWeekFromDay.current = fromDay
+    dragWeekFromDate.current = fromDateStr
     dragCalOffset.current = e.nativeEvent.offsetY
     dragEmail.current = null
     e.dataTransfer.effectAllowed = 'move'
@@ -549,7 +566,7 @@ export default function CalendrierPage() {
       timeMin: 9*60,
       isUnplanned: true,
     }
-    dragWeekFromDay.current = null
+    dragWeekFromDate.current = null
     dragCalOffset.current = 0
     dragEmail.current = null
     e.dataTransfer.effectAllowed = 'move'
@@ -558,13 +575,13 @@ export default function CalendrierPage() {
   function onEmailDragStart(e: React.DragEvent, message: any) {
     dragEmail.current = message
     dragWeekTask.current = null
-    dragWeekFromDay.current = null
+    dragWeekFromDate.current = null
     e.dataTransfer.effectAllowed = 'copy'
   }
 
-  function onColDragOver(e: React.DragEvent, dayIdx: number) {
+  function onColDragOver(e: React.DragEvent, dateStr: string) {
     e.preventDefault()
-    setDragOverDay(dayIdx)
+    setDragOverDate(dateStr)
 
     if (dragEmail.current) return
 
@@ -575,12 +592,12 @@ export default function CalendrierPage() {
     const rect = colEl.getBoundingClientRect()
     const y = e.clientY - rect.top
     const dur = t.dur || 60
-    const offsetY = dragWeekFromDay.current !== null ? dragCalOffset.current : 0
+    const offsetY = dragWeekFromDate.current !== null ? dragCalOffset.current : 0
     const min = getMinFromY(y, offsetY)
 
     setTooltip({ x: e.clientX+12, y: e.clientY-10, text: minToStr(min)+' – '+minToStr(min+dur) })
 
-    const ghost = document.getElementById(`week-ghost-${dayIdx}`)
+    const ghost = document.getElementById(`week-ghost-${dateStr}`)
     if (ghost) {
       ghost.style.top = (min - 6*60) * PPM + 'px'
       ghost.style.height = Math.max(dur * PPM, 10) + 'px'
@@ -588,20 +605,20 @@ export default function CalendrierPage() {
     }
   }
 
-  function onColDragLeave(e: React.DragEvent, dayIdx: number) {
+  function onColDragLeave(e: React.DragEvent, dateStr: string) {
     const colEl = e.currentTarget as HTMLElement
     if (e.relatedTarget && colEl.contains(e.relatedTarget as Node)) return
-    setDragOverDay(null)
+    setDragOverDate(null)
     setTooltip(null)
-    const ghost = document.getElementById(`week-ghost-${dayIdx}`)
+    const ghost = document.getElementById(`week-ghost-${dateStr}`)
     if (ghost) ghost.style.display = 'none'
   }
 
-  async function onColDrop(e: React.DragEvent, dayIdx: number) {
+  async function onColDrop(e: React.DragEvent, dateStr: string) {
     e.preventDefault()
-    setDragOverDay(null)
+    setDragOverDate(null)
     setTooltip(null)
-    const ghost = document.getElementById(`week-ghost-${dayIdx}`)
+    const ghost = document.getElementById(`week-ghost-${dateStr}`)
     if (ghost) ghost.style.display = 'none'
 
     if (dragEmail.current) {
@@ -613,7 +630,7 @@ export default function CalendrierPage() {
         cat: categories[0]?.id || '',
         includeLink: true,
       })
-      setDropEmailModal({ message: msg, dayIdx })
+      setDropEmailModal({ message: msg, dateStr })
       dragEmail.current = null
       return
     }
@@ -624,32 +641,79 @@ export default function CalendrierPage() {
     if (t.isRecurring) {
       alert('Pour modifier une tâche récurrente, cliquez dessus pour ouvrir le popup.')
       dragWeekTask.current = null
-      dragWeekFromDay.current = null
+      dragWeekFromDate.current = null
       return
     }
 
     const colEl = e.currentTarget as HTMLElement
     const rect = colEl.getBoundingClientRect()
     const y = e.clientY - rect.top
-    const offsetY = dragWeekFromDay.current !== null ? dragCalOffset.current : 0
+    const offsetY = dragWeekFromDate.current !== null ? dragCalOffset.current : 0
     const newTimeMin = getMinFromY(y, offsetY)
 
-    await saveScheduled(t.id, newTimeMin, t.dur, dayIdx)
+    await saveScheduled(t.id, newTimeMin, t.dur, dateStr)
     dragWeekTask.current = null
-    dragWeekFromDay.current = null
-    loadWeek(user.id)
+    dragWeekFromDate.current = null
+    loadBuffer(user.id)
   }
 
-  function openAddForm(dayIdx: number) {
-    setShowAddForm(dayIdx)
+  function openAddForm(dateStr: string) {
+    setShowAddForm(dateStr)
     setNewTitle(''); setNewTime('09:00'); setNewDur('60')
     setNewCat(categories[0]?.id || '')
   }
 
-  const monday = getMonday()
-  const friday = new Date(monday); friday.setDate(monday.getDate()+4)
+  // Détecte le scroll pour recharger le buffer aux bords
+  function handleScroll() {
+    const el = scrollContainerRef.current
+    if (!el || reloadingRef.current) return
+
+    const scrollLeft = el.scrollLeft
+    const maxScroll = el.scrollWidth - el.clientWidth
+
+    // Si on s'approche du bord gauche (moins de 3 jours restants)
+    if (scrollLeft < DAY_WIDTH * 3) {
+      reloadingRef.current = true
+      const newCenter = new Date(centerDate)
+      newCenter.setDate(centerDate.getDate() - 10)
+      setCenterDate(newCenter)
+      setTimeout(() => { reloadingRef.current = false }, 500)
+    }
+    // Si on s'approche du bord droit
+    else if (scrollLeft > maxScroll - DAY_WIDTH * 3) {
+      reloadingRef.current = true
+      const newCenter = new Date(centerDate)
+      newCenter.setDate(centerDate.getDate() + 10)
+      setCenterDate(newCenter)
+      setTimeout(() => { reloadingRef.current = false }, 500)
+    }
+  }
+
+  function navigatePrev() {
+    const newCenter = new Date(centerDate)
+    newCenter.setDate(centerDate.getDate() - 5)
+    setCenterDate(newCenter)
+  }
+
+  function navigateNext() {
+    const newCenter = new Date(centerDate)
+    newCenter.setDate(centerDate.getDate() + 5)
+    setCenterDate(newCenter)
+  }
+
+  function navigateToday() {
+    const today = new Date()
+    today.setHours(0,0,0,0)
+    setCenterDate(today)
+  }
+
   const todayStr = ymd(new Date())
   const initials = user?.email?.split('@')[0].slice(0,2).toUpperCase() || 'ÉG'
+
+  // Range visible pour le titre (5 premiers jours du buffer après le centre)
+  const firstVisible = bufferDates[Math.floor(BUFFER_DAYS/2)]
+  const lastVisible = new Date(firstVisible)
+  lastVisible.setDate(firstVisible.getDate() + 4)
 
   if (loading) return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#f5f4f0' }}>
@@ -709,18 +773,27 @@ export default function CalendrierPage() {
           )}
         </div>
 
-        <div style={{ background:'#1a1a1a', borderBottom:'0.5px solid rgba(255,255,255,0.08)', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 12px', flexShrink:0 }}>
-          <button onClick={() => setWeekOffset(w => w-1)}
-            style={{ background:'#F2E000', border:'none', borderRadius:'6px', width:'28px', height:'28px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="#111" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          </button>
+        <div style={{ background:'#1a1a1a', borderBottom:'0.5px solid rgba(255,255,255,0.08)', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 12px', flexShrink:0, gap:'12px' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:'8px', flexShrink:0 }}>
+            <button onClick={navigatePrev}
+              title="5 jours précédents"
+              style={{ background:'#F2E000', border:'none', borderRadius:'6px', width:'28px', height:'28px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="#111" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
+            <button onClick={navigateToday}
+              style={{ background:'transparent', border:'1px solid rgba(255,255,255,0.2)', color:'rgba(255,255,255,0.85)', borderRadius:'6px', padding:'4px 12px', fontSize:'12px', fontWeight:'500', cursor:'pointer' }}>
+              Aujourd'hui
+            </button>
+            <button onClick={navigateNext}
+              title="5 jours suivants"
+              style={{ background:'#F2E000', border:'none', borderRadius:'6px', width:'28px', height:'28px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 18l6-6-6-6" stroke="#111" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
+          </div>
           <span style={{ fontSize:'13px', color:'rgba(255,255,255,0.8)', fontWeight:'500' }}>
-            Semaine du {monday.getDate()} {MOIS[monday.getMonth()]} au {friday.getDate()} {MOIS[friday.getMonth()]}
+            {firstVisible.getDate()} {MOIS[firstVisible.getMonth()]} – {lastVisible.getDate()} {MOIS[lastVisible.getMonth()]} {lastVisible.getFullYear()}
           </span>
-          <button onClick={() => setWeekOffset(w => w+1)}
-            style={{ background:'#F2E000', border:'none', borderRadius:'6px', width:'28px', height:'28px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 18l6-6-6-6" stroke="#111" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          </button>
+          <div style={{ width:'180px' }} />
         </div>
 
         <div style={{ display:'flex', gap:'12px', padding:'7px 1rem', background:'white', borderBottom:'0.5px solid rgba(0,0,0,0.08)', flexShrink:0 }}>
@@ -732,130 +805,138 @@ export default function CalendrierPage() {
         </div>
 
         <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
-          <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'auto', background:'white' }}>
-            <div style={{ display:'flex', position:'sticky', top:0, background:'white', zIndex:5, borderBottom:'0.5px solid rgba(0,0,0,0.08)' }}>
-              <div style={{ width:'48px', flexShrink:0, borderRight:'0.5px solid rgba(0,0,0,0.08)' }} />
-              {JOURS_LONG.map((jour, dayIdx) => {
-                const d = getDateForDay(dayIdx)
-                const ds = ymd(d)
-                const isToday = ds === todayStr
-                return (
-                  <div key={dayIdx}
-                    style={{ flex:1, minWidth:'180px', padding:'10px 12px', borderRight: dayIdx < 4 ? '0.5px solid rgba(0,0,0,0.08)' : 'none' }}>
-                    <div style={{ fontSize:'13px', fontWeight:'500', color: isToday ? '#3B6D11' : '#111' }}>{jour}</div>
-                    <div style={{ fontSize:'11px', color:'#888', marginTop:'2px' }}>{d.getDate()} {MOIS[d.getMonth()]}</div>
+          <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'white' }}>
+            {/* Container scrollable horizontalement */}
+            <div ref={scrollContainerRef} onScroll={handleScroll}
+              style={{ flex:1, overflowX:'auto', overflowY:'auto', position:'relative' }}>
+              <div style={{ display:'flex', minWidth:'fit-content' }}>
+                {/* Colonne des heures (sticky à gauche) */}
+                <div style={{ width:'48px', flexShrink:0, position:'sticky', left:0, background:'white', zIndex:10, borderRight:'0.5px solid rgba(0,0,0,0.08)' }}>
+                  {/* Header vide */}
+                  <div style={{ height:'62px', borderBottom:'0.5px solid rgba(0,0,0,0.08)', position:'sticky', top:0, background:'white', zIndex:11 }} />
+                  {HOURS.map(h => (
+                    <div key={h} style={{ height:`${PPH}px`, borderBottom:'0.5px solid rgba(0,0,0,0.05)', display:'flex', alignItems:'flex-start', justifyContent:'flex-end', padding:'0 6px 0 0', fontSize:'11px', color:'#bbb' }}>
+                      {h}:00
+                    </div>
+                  ))}
+                </div>
 
-                    {showAddForm === dayIdx ? (
-                      <div style={{ marginTop:'8px', background:'#f9f9f7', border:'0.5px solid rgba(0,0,0,0.1)', borderRadius:'6px', padding:'8px' }}>
-                        <input autoFocus value={newTitle} onChange={e => setNewTitle(e.target.value)}
-                          placeholder="Titre de la tâche"
-                          style={{ width:'100%', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'4px', padding:'5px 7px', fontSize:'12px', outline:'none', marginBottom:'5px' }}
-                          onKeyDown={e => { if (e.key === 'Enter') createTaskInDay(dayIdx); if (e.key === 'Escape') setShowAddForm(null) }} />
-                        <div style={{ display:'flex', gap:'4px', marginBottom:'5px' }}>
-                          <input type="time" value={newTime} onChange={e => setNewTime(e.target.value)}
-                            style={{ flex:1, border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'4px', padding:'4px 6px', fontSize:'11px', outline:'none' }} />
-                          <input type="number" value={newDur} onChange={e => setNewDur(e.target.value)} min="5" step="5"
-                            style={{ width:'60px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'4px', padding:'4px 6px', fontSize:'11px', outline:'none' }} />
-                          <span style={{ fontSize:'10px', color:'#888', alignSelf:'center' }}>min</span>
+                {/* Colonnes des jours */}
+                <div style={{ display:'flex' }}>
+                  {bufferDates.map(d => {
+                    const ds = ymd(d)
+                    const isToday = ds === todayStr
+                    const isWeekend = d.getDay() === 0 || d.getDay() === 6
+                    const dayTasks = tasksByDate.get(ds) || []
+                    const dayGoogle = googleByDate.get(ds) || []
+                    const isOver = dragOverDate === ds
+
+                    return (
+                      <div key={ds} style={{ width:`${DAY_WIDTH}px`, flexShrink:0, borderRight:'0.5px solid rgba(0,0,0,0.08)' }}>
+                        {/* Header sticky */}
+                        <div style={{ position:'sticky', top:0, background: isWeekend ? '#fafaf6' : 'white', zIndex:5, borderBottom:'0.5px solid rgba(0,0,0,0.08)', padding:'8px 10px' }}>
+                          <div style={{ fontSize:'12px', fontWeight:'500', color: isToday ? '#3B6D11' : (isWeekend ? '#888' : '#111') }}>
+                            {JOURS_LONG[d.getDay()]}
+                          </div>
+                          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                            <div style={{ fontSize:'11px', color:'#888', marginTop:'2px' }}>{d.getDate()} {MOIS[d.getMonth()]}</div>
+                            {showAddForm !== ds && (
+                              <button onClick={() => openAddForm(ds)}
+                                title="Ajouter une tâche"
+                                style={{ background:'transparent', border:'none', color:'#999', fontSize:'14px', cursor:'pointer', padding:'0 4px' }}>
+                                +
+                              </button>
+                            )}
+                          </div>
+                          {showAddForm === ds && (
+                            <div style={{ marginTop:'6px', background:'#f9f9f7', border:'0.5px solid rgba(0,0,0,0.1)', borderRadius:'6px', padding:'8px' }}>
+                              <input autoFocus value={newTitle} onChange={e => setNewTitle(e.target.value)}
+                                placeholder="Titre"
+                                style={{ width:'100%', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'4px', padding:'5px 7px', fontSize:'12px', outline:'none', marginBottom:'5px' }}
+                                onKeyDown={e => { if (e.key === 'Enter') createTaskInDate(ds); if (e.key === 'Escape') setShowAddForm(null) }} />
+                              <div style={{ display:'flex', gap:'4px', marginBottom:'5px' }}>
+                                <input type="time" value={newTime} onChange={e => setNewTime(e.target.value)}
+                                  style={{ flex:1, border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'4px', padding:'4px 6px', fontSize:'11px', outline:'none' }} />
+                                <input type="number" value={newDur} onChange={e => setNewDur(e.target.value)} min="5" step="5"
+                                  style={{ width:'50px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'4px', padding:'4px 6px', fontSize:'11px', outline:'none' }} />
+                              </div>
+                              <select value={newCat} onChange={e => setNewCat(e.target.value)}
+                                style={{ width:'100%', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'4px', padding:'4px 6px', fontSize:'11px', outline:'none', marginBottom:'6px', background:'white' }}>
+                                <option value="">— Catégorie —</option>
+                                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                              </select>
+                              <div style={{ display:'flex', gap:'4px', justifyContent:'flex-end' }}>
+                                <button onClick={() => setShowAddForm(null)}
+                                  style={{ fontSize:'11px', padding:'4px 8px', border:'0.5px solid rgba(0,0,0,0.1)', borderRadius:'4px', background:'white', cursor:'pointer' }}>
+                                  Annuler
+                                </button>
+                                <button onClick={() => createTaskInDate(ds)}
+                                  style={{ fontSize:'11px', padding:'4px 10px', background:'#F2E000', border:'none', borderRadius:'4px', fontWeight:'500', cursor:'pointer' }}>
+                                  Ajouter
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        <select value={newCat} onChange={e => setNewCat(e.target.value)}
-                          style={{ width:'100%', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'4px', padding:'4px 6px', fontSize:'11px', outline:'none', marginBottom:'6px', background:'white' }}>
-                          <option value="">— Catégorie —</option>
-                          {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
-                        <div style={{ display:'flex', gap:'4px', justifyContent:'flex-end' }}>
-                          <button onClick={() => setShowAddForm(null)}
-                            style={{ fontSize:'11px', padding:'4px 8px', border:'0.5px solid rgba(0,0,0,0.1)', borderRadius:'4px', background:'white', cursor:'pointer' }}>
-                            Annuler
-                          </button>
-                          <button onClick={() => createTaskInDay(dayIdx)}
-                            style={{ fontSize:'11px', padding:'4px 10px', background:'#F2E000', border:'none', borderRadius:'4px', fontWeight:'500', cursor:'pointer' }}>
-                            Ajouter
-                          </button>
+
+                        {/* Grille horaire */}
+                        <div onDragOver={e => onColDragOver(e, ds)}
+                          onDragLeave={e => onColDragLeave(e, ds)}
+                          onDrop={e => onColDrop(e, ds)}
+                          style={{ position:'relative', height: HOURS.length*PPH+'px', background: isOver ? 'rgba(242,224,0,0.04)' : (isWeekend ? '#fafaf6' : 'transparent'), transition:'background 0.1s' }}>
+                          {HOURS.map((h,i) => (
+                            <div key={h}>
+                              <div style={{ position:'absolute', left:0, right:0, top:i*PPH, borderBottom:'0.5px solid rgba(0,0,0,0.06)' }} />
+                              <div style={{ position:'absolute', left:0, right:0, top:i*PPH+30, borderBottom:'0.5px dashed rgba(0,0,0,0.04)' }} />
+                            </div>
+                          ))}
+
+                          <div id={`week-ghost-${ds}`}
+                            style={{ display:'none', position:'absolute', left:'3px', right:'3px', background:'rgba(242,224,0,0.25)', border:'1.5px dashed #D4B800', borderRadius:'4px', pointerEvents:'none', zIndex:4 }} />
+
+                          {dayGoogle.map((t, idx) => {
+                            const top = (t.timeMin - 6*60) * PPM
+                            const height = Math.max(t.dur * PPM, 20)
+                            return (
+                              <div key={`g-${t.id}-${idx}`}
+                                onClick={() => setEventDetails(t)}
+                                title="Cliquer pour voir les détails"
+                                style={{ position:'absolute', left:'3px', right:'3px', top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 5px', overflow:'hidden', zIndex:2, background:'#E6F1FB', color:'#0C447C', borderLeft:'3px solid #185FA5', cursor:'pointer' }}>
+                                <div style={{ fontSize:'10px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}</div>
+                                <div style={{ fontSize:'9px', opacity:0.7, marginTop:'1px' }}>{minToStr(t.timeMin)}</div>
+                              </div>
+                            )
+                          })}
+
+                          {dayTasks.map((t, idx) => {
+                            const top = (t.timeMin - 6*60) * PPM
+                            const height = Math.max(t.dur * PPM, 20)
+                            const isDone = t.isDone
+                            return (
+                              <div key={`t-${t.id}-${t.occurrenceDate || ''}-${idx}`}
+                                draggable={!t.isRecurring && !isDone}
+                                onDragStart={e => onWeekTaskDragStart(e, t, ds)}
+                                onClick={() => openEditTask(t.id)}
+                                title="Cliquer pour modifier"
+                                style={{ position:'absolute', left:'3px', right:'3px', top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 5px 3px 22px', overflow:'hidden', zIndex:3, cursor: (t.isRecurring || isDone) ? 'pointer' : 'grab', background: isDone ? '#f0f0f0' : '#EAF3DE', color: isDone ? '#999' : '#27500A', borderLeft:`3px solid ${isDone ? '#bbb' : (t.color || '#3B6D11')}`, opacity: isDone ? 0.7 : 1 }}>
+                                <div onClick={(ev) => toggleTaskDone(t, ev)}
+                                  title={isDone ? 'Marquer comme non terminée' : 'Marquer comme terminée'}
+                                  style={{ position:'absolute', left:'4px', top:'4px', width:'14px', height:'14px', borderRadius:'50%', border: isDone ? 'none' : '1.5px solid rgba(0,0,0,0.25)', background: isDone ? '#3B6D11' : 'white', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, zIndex:5 }}>
+                                  {isDone && <svg width="9" height="9" viewBox="0 0 12 12"><polyline points="2,6 5,9 10,3" stroke="white" strokeWidth="1.8" fill="none" strokeLinecap="round"/></svg>}
+                                </div>
+                                <div style={{ fontSize:'10px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', textDecoration: isDone ? 'line-through' : 'none' }}>
+                                  {t.isRecurring && '🔁 '}{t.gmail_message_id && '📧 '}{t.title.split('\n')[0]}
+                                </div>
+                                <div style={{ fontSize:'9px', opacity:0.7, marginTop:'1px' }}>{minToStr(t.timeMin)}</div>
+                              </div>
+                            )
+                          })}
                         </div>
                       </div>
-                    ) : (
-                      <button onClick={() => openAddForm(dayIdx)}
-                        style={{ marginTop:'6px', width:'100%', padding:'5px', fontSize:'11px', color:'#888', background:'transparent', border:'0.5px dashed rgba(0,0,0,0.15)', borderRadius:'4px', cursor:'pointer' }}>
-                        + Ajouter tâche
-                      </button>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-
-            <div style={{ display:'flex', position:'relative' }}>
-              <div style={{ width:'48px', flexShrink:0, borderRight:'0.5px solid rgba(0,0,0,0.08)' }}>
-                {HOURS.map(h => (
-                  <div key={h} style={{ height:`${PPH}px`, borderBottom:'0.5px solid rgba(0,0,0,0.05)', display:'flex', alignItems:'flex-start', justifyContent:'flex-end', padding:'0 6px 0 0', fontSize:'11px', color:'#bbb' }}>
-                    {h}:00
-                  </div>
-                ))}
+                    )
+                  })}
+                </div>
               </div>
-
-              {JOURS_LONG.map((_, dayIdx) => {
-                const dayTasks = weekTasks[dayIdx] || []
-                const dayGoogle = weekGoogle[dayIdx] || []
-                const isOver = dragOverDay === dayIdx
-
-                return (
-                  <div key={dayIdx}
-                    onDragOver={e => onColDragOver(e, dayIdx)}
-                    onDragLeave={e => onColDragLeave(e, dayIdx)}
-                    onDrop={e => onColDrop(e, dayIdx)}
-                    style={{ flex:1, minWidth:'180px', position:'relative', height: HOURS.length*PPH+'px', borderRight: dayIdx < 4 ? '0.5px solid rgba(0,0,0,0.08)' : 'none', background: isOver ? 'rgba(242,224,0,0.04)' : 'transparent', transition:'background 0.1s' }}>
-                    {HOURS.map((h,i) => (
-                      <div key={h}>
-                        <div style={{ position:'absolute', left:0, right:0, top:i*PPH, borderBottom:'0.5px solid rgba(0,0,0,0.06)' }} />
-                        <div style={{ position:'absolute', left:0, right:0, top:i*PPH+30, borderBottom:'0.5px dashed rgba(0,0,0,0.04)' }} />
-                      </div>
-                    ))}
-
-                    <div id={`week-ghost-${dayIdx}`}
-                      style={{ display:'none', position:'absolute', left:'3px', right:'3px', background:'rgba(242,224,0,0.25)', border:'1.5px dashed #D4B800', borderRadius:'4px', pointerEvents:'none', zIndex:4 }} />
-
-                    {dayGoogle.map((t, idx) => {
-                      const top = (t.timeMin - 6*60) * PPM
-                      const height = Math.max(t.dur * PPM, 20)
-                      return (
-                        <div key={`g-${t.id}-${idx}`}
-                          onClick={() => setEventDetails(t)}
-                          title="Cliquer pour voir les détails"
-                          style={{ position:'absolute', left:'3px', right:'3px', top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 5px', overflow:'hidden', zIndex:2, background:'#E6F1FB', color:'#0C447C', borderLeft:'3px solid #185FA5', cursor:'pointer' }}>
-                          <div style={{ fontSize:'10px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}</div>
-                          <div style={{ fontSize:'9px', opacity:0.7, marginTop:'1px' }}>{minToStr(t.timeMin)}</div>
-                        </div>
-                      )
-                    })}
-
-                    {dayTasks.map((t, idx) => {
-                      const top = (t.timeMin - 6*60) * PPM
-                      const height = Math.max(t.dur * PPM, 20)
-                      const isDone = t.isDone
-                      return (
-                        <div key={`t-${t.id}-${t.occurrenceDate || ''}-${idx}`}
-                          draggable={!t.isRecurring && !isDone}
-                          onDragStart={e => onWeekTaskDragStart(e, t, dayIdx)}
-                          onClick={() => openEditTask(t.id)}
-                          title="Cliquer pour modifier"
-                          style={{ position:'absolute', left:'3px', right:'3px', top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 5px 3px 22px', overflow:'hidden', zIndex:3, cursor: (t.isRecurring || isDone) ? 'pointer' : 'grab', background: isDone ? '#f0f0f0' : '#EAF3DE', color: isDone ? '#999' : '#27500A', borderLeft:`3px solid ${isDone ? '#bbb' : (t.color || '#3B6D11')}`, opacity: isDone ? 0.7 : 1 }}>
-                          {/* Checkmark cliquable */}
-                          <div onClick={(ev) => toggleTaskDone(t, ev)}
-                            title={isDone ? 'Marquer comme non terminée' : 'Marquer comme terminée'}
-                            style={{ position:'absolute', left:'4px', top:'4px', width:'14px', height:'14px', borderRadius:'50%', border: isDone ? 'none' : '1.5px solid rgba(0,0,0,0.25)', background: isDone ? '#3B6D11' : 'white', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, zIndex:5 }}>
-                            {isDone && <svg width="9" height="9" viewBox="0 0 12 12"><polyline points="2,6 5,9 10,3" stroke="white" strokeWidth="1.8" fill="none" strokeLinecap="round"/></svg>}
-                          </div>
-                          <div style={{ fontSize:'10px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', textDecoration: isDone ? 'line-through' : 'none' }}>
-                            {t.isRecurring && '🔁 '}{t.gmail_message_id && '📧 '}{t.title.split('\n')[0]}
-                          </div>
-                          <div style={{ fontSize:'9px', opacity:0.7, marginTop:'1px' }}>{minToStr(t.timeMin)}</div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )
-              })}
             </div>
           </div>
 
