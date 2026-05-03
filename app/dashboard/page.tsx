@@ -45,6 +45,8 @@ export default function DashboardPage() {
   const [manualEnd, setManualEnd] = useState('')
   const [manualCat, setManualCat] = useState('')
   const [loading, setLoading] = useState(true)
+  const [weekTotal, setWeekTotal] = useState(0)
+  const [monthTotal, setMonthTotal] = useState(0)
   const interval = useRef<any>(null)
   const taskWrapRef = useRef<HTMLDivElement>(null)
 
@@ -63,6 +65,7 @@ export default function DashboardPage() {
       loadCategories(data.user.id)
       loadEntries(data.user.id, new Date())
       loadTasks(data.user.id)
+      loadTotals(data.user.id)
       setLoading(false)
 
       // Restaurer l'état du chrono depuis localStorage
@@ -130,42 +133,73 @@ export default function DashboardPage() {
   }
 
   async function loadTasks(uid: string) {
-  // Charger les tâches non terminées
-  const { data: allTasks } = await supabase.from('tasks')
-    .select('*, category:categories(id,name,color)')
-    .eq('user_id', uid)
-    .eq('is_done', false)
-    .order('scheduled_at', { ascending: true, nullsFirst: false })
+    const { data: allTasks } = await supabase.from('tasks')
+      .select('*, category:categories(id,name,color)')
+      .eq('user_id', uid)
+      .eq('is_done', false)
+      .order('scheduled_at', { ascending: true, nullsFirst: false })
 
-  if (!allTasks) { setTasks([]); return }
+    if (!allTasks) { setTasks([]); return }
 
-  // Charger les occurrences récurrentes faites aujourd'hui
-  const today = new Date()
-  const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
-  const recurringIds = allTasks.filter(t => t.recurrence).map(t => t.id)
+    // Charger les occurrences récurrentes faites aujourd'hui
+    const today = new Date()
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
+    const recurringIds = allTasks.filter(t => t.recurrence).map(t => t.id)
 
-  let doneOccurrenceIds = new Set<string>()
-  if (recurringIds.length > 0) {
-    const { data: occurrences } = await supabase.from('task_occurrences')
-      .select('task_id, is_done')
-      .in('task_id', recurringIds)
-      .eq('occurrence_date', todayStr)
-      .eq('is_done', true)
-    if (occurrences) {
-      doneOccurrenceIds = new Set(occurrences.map((o: any) => o.task_id))
+    let doneOccurrenceIds = new Set<string>()
+    if (recurringIds.length > 0) {
+      const { data: occurrences } = await supabase.from('task_occurrences')
+        .select('task_id, is_done')
+        .in('task_id', recurringIds)
+        .eq('occurrence_date', todayStr)
+        .eq('is_done', true)
+      if (occurrences) {
+        doneOccurrenceIds = new Set(occurrences.map((o: any) => o.task_id))
+      }
     }
-  }
 
-  // Filtrer : exclure les tâches récurrentes dont l'occurrence d'aujourd'hui est faite
-  const filtered = allTasks.filter(t => !t.recurrence || !doneOccurrenceIds.has(t.id))
-  setTasks(filtered)
-}
+    // Filtrer : exclure les tâches récurrentes dont l'occurrence d'aujourd'hui est faite
+    const filtered = allTasks.filter(t => !t.recurrence || !doneOccurrenceIds.has(t.id))
+    setTasks(filtered)
+  }
 
   async function loadEntries(uid: string, d: Date) {
     const start = new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString()
     const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59).toISOString()
     const { data } = await supabase.from('time_entries').select('*, category:categories(name,color)').eq('user_id', uid).gte('started_at', start).lte('started_at', end).order('started_at', { ascending: false })
     setEntries(data || [])
+  }
+
+  async function loadTotals(uid: string) {
+    const now = new Date()
+
+    // Début de la semaine (lundi)
+    const day = now.getDay()
+    const diffToMonday = day === 0 ? -6 : 1 - day
+    const monday = new Date(now)
+    monday.setDate(now.getDate() + diffToMonday)
+    monday.setHours(0,0,0,0)
+
+    // Début et fin du mois courant
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const monthEnd = new Date(now.getFullYear(), now.getMonth()+1, 1)
+
+    // Total semaine
+    const { data: weekData } = await supabase.from('time_entries')
+      .select('duration')
+      .eq('user_id', uid)
+      .gte('started_at', monday.toISOString())
+    const wTotal = (weekData || []).reduce((sum: number, e: any) => sum + (e.duration || 0), 0)
+    setWeekTotal(wTotal)
+
+    // Total mois
+    const { data: monthData } = await supabase.from('time_entries')
+      .select('duration')
+      .eq('user_id', uid)
+      .gte('started_at', monthStart.toISOString())
+      .lt('started_at', monthEnd.toISOString())
+    const mTotal = (monthData || []).reduce((sum: number, e: any) => sum + (e.duration || 0), 0)
+    setMonthTotal(mTotal)
   }
 
   function selectTask(task: any) {
@@ -213,6 +247,7 @@ export default function DashboardPage() {
     setElapsed(0); setDescription(''); setStartTime(null)
     localStorage.removeItem('grenier-timer')
     loadEntries(user.id, date)
+    loadTotals(user.id)
   }
 
   async function saveManual() {
@@ -227,6 +262,7 @@ export default function DashboardPage() {
     })
     setShowManual(false); setManualDesc(''); setManualStart(''); setManualEnd('')
     loadEntries(user.id, date)
+    loadTotals(user.id)
   }
 
   function openEditEntry(entry: any) {
@@ -266,12 +302,14 @@ export default function DashboardPage() {
     }).eq('id', editEntry.id)
     setEditEntry(null)
     loadEntries(user.id, date)
+    loadTotals(user.id)
   }
 
   async function deleteEntry(entryId: string) {
     if (!confirm('Supprimer cette entrée ?')) return
     await supabase.from('time_entries').delete().eq('id', entryId)
     loadEntries(user.id, date)
+    loadTotals(user.id)
   }
 
   function shiftDay(d: number) {
@@ -498,8 +536,8 @@ export default function DashboardPage() {
           <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'8px' }}>
             {[
               { label:"Aujourd'hui", val: fmtH(totalSec), sub:'sur 8h objectif' },
-              { label:'Cette semaine', val:'–', sub:'lun – ven' },
-              { label:'Ce mois', val:'–', sub: new Date().toLocaleString('fr-CA',{month:'long',year:'numeric'}) },
+              { label:'Cette semaine', val: fmtH(weekTotal), sub:'lun – dim' },
+              { label:'Ce mois', val: fmtH(monthTotal), sub: new Date().toLocaleString('fr-CA',{month:'long',year:'numeric'}) },
             ].map(s => (
               <div key={s.label} style={{ background:'white', border:'0.5px solid rgba(0,0,0,0.1)', borderRadius:'10px', padding:'10px 12px' }}>
                 <div style={{ fontSize:'11px', color:'#aaa', marginBottom:'3px' }}>{s.label}</div>
