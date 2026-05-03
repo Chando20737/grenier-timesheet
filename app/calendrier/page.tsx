@@ -1367,3 +1367,33 @@ export default function CalendrierPage() {
 
             {eventDetails.description && (
               <div style={{ marginBottom:'12px' }}>
+                <div style={{ fontSize:'11px', color:'#777', marginBottom:'6px' }}>📝 Description</div>
+                <div style={{ fontSize:'12px', color:'#555', background:'#f9f9f7', border:'0.5px solid rgba(0,0,0,0.08)', borderRadius:'6px', padding:'10px', whiteSpace:'pre-wrap', maxHeight:'200px', overflowY:'auto' }}
+                  dangerouslySetInnerHTML={{ __html: eventDetails.description }} />
+              </div>
+            )}
+
+            <div style={{ display:'flex', gap:'8px', justifyContent:'space-between', alignItems:'center', marginTop:'14px' }}>
+              {eventDetails.htmlLink ? (
+                <a href={eventDetails.htmlLink} target="_blank" rel="noopener noreferrer"
+                  style={{ padding:'7px 14px', fontSize:'12px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', background:'white', color:'#555', textDecoration:'none', cursor:'pointer' }}>
+                  Ouvrir dans Google Agenda ↗
+                </a>
+              ) : <span />}
+              <button onClick={() => setEventDetails(null)}
+                style={{ padding:'7px 16px', fontSize:'13px', background:'#F2E000', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tooltip && (
+        <div style={{ position:'fixed', left:tooltip.x, top:tooltip.y, background:'#111', color:'#F2E000', fontSize:'11px', padding:'3px 7px', borderRadius:'4px', pointerEvents:'none', zIndex:100 }}>
+          {tooltip.text}
+        </div>
+      )}
+    </div>
+  )
+}
