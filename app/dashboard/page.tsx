@@ -130,14 +130,36 @@ export default function DashboardPage() {
   }
 
   async function loadTasks(uid: string) {
-    // Tri : tâches planifiées en premier (par scheduled_at croissant), non planifiées à la fin
-    const { data } = await supabase.from('tasks')
-      .select('*, category:categories(id,name,color)')
-      .eq('user_id', uid)
-      .eq('is_done', false)
-      .order('scheduled_at', { ascending: true, nullsFirst: false })
-    setTasks(data || [])
+  // Charger les tâches non terminées
+  const { data: allTasks } = await supabase.from('tasks')
+    .select('*, category:categories(id,name,color)')
+    .eq('user_id', uid)
+    .eq('is_done', false)
+    .order('scheduled_at', { ascending: true, nullsFirst: false })
+
+  if (!allTasks) { setTasks([]); return }
+
+  // Charger les occurrences récurrentes faites aujourd'hui
+  const today = new Date()
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
+  const recurringIds = allTasks.filter(t => t.recurrence).map(t => t.id)
+
+  let doneOccurrenceIds = new Set<string>()
+  if (recurringIds.length > 0) {
+    const { data: occurrences } = await supabase.from('task_occurrences')
+      .select('task_id, is_done')
+      .in('task_id', recurringIds)
+      .eq('occurrence_date', todayStr)
+      .eq('is_done', true)
+    if (occurrences) {
+      doneOccurrenceIds = new Set(occurrences.map((o: any) => o.task_id))
+    }
   }
+
+  // Filtrer : exclure les tâches récurrentes dont l'occurrence d'aujourd'hui est faite
+  const filtered = allTasks.filter(t => !t.recurrence || !doneOccurrenceIds.has(t.id))
+  setTasks(filtered)
+}
 
   async function loadEntries(uid: string, d: Date) {
     const start = new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString()
