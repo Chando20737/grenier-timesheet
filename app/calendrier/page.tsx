@@ -330,22 +330,32 @@ export default function CalendrierPage() {
   }
 
   async function toggleTaskDone(task: any, ev?: React.MouseEvent) {
-    if (ev) ev.stopPropagation()
-    if (!user) return
+  if (ev) ev.stopPropagation()
+  if (!user) return
 
-    if (task.isRecurring) {
-      const newDone = !task.isDone
-      await supabase.from('task_occurrences').upsert({
-        task_id: task.id,
-        occurrence_date: task.occurrenceDate,
-        is_done: newDone,
-      }, { onConflict: 'task_id,occurrence_date' })
-    } else {
-      const newDone = !task.isDone
-      await supabase.from('tasks').update({ is_done: newDone }).eq('id', task.id)
-    }
-    loadBuffer(user.id)
+  console.log('[toggleTaskDone]', {
+    taskId: task.id,
+    isRecurring: task.isRecurring,
+    isDone: task.isDone,
+    occurrenceDate: task.occurrenceDate,
+    title: task.title,
+  })
+
+  if (task.isRecurring) {
+    const newDone = !task.isDone
+    const { error } = await supabase.from('task_occurrences').upsert({
+      task_id: task.id,
+      occurrence_date: task.occurrenceDate,
+      is_done: newDone,
+    }, { onConflict: 'task_id,occurrence_date' })
+    if (error) console.log('[toggleTaskDone] occurrence error:', error)
+  } else {
+    const newDone = !task.isDone
+    const { error } = await supabase.from('tasks').update({ is_done: newDone }).eq('id', task.id)
+    if (error) console.log('[toggleTaskDone] task error:', error)
   }
+  loadBuffer(user.id)
+}
 
   function connectGoogle() {
     if (!user) return
