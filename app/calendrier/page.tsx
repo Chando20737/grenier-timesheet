@@ -6,8 +6,8 @@ const JOURS_LONG = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Sa
 const MOIS = ['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc']
 const HOURS = Array.from({length:14}, (_,i) => i+6)
 const PPH = 60, PPM = PPH/60
-const DAY_WIDTH = 220 // largeur d'une colonne jour en pixels
-const BUFFER_DAYS = 30 // 15 avant + 15 après le centre
+const DAY_WIDTH = 220
+const BUFFER_DAYS = 30
 
 const RECURRENCES = [
   { value: '', label: 'Aucune' },
@@ -114,7 +114,10 @@ export default function CalendrierPage() {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const reloadingRef = useRef(false)
 
-  // Génère les 30 dates du buffer autour de centerDate
+  // Pour l'alignement du header avec la colonne d'heures
+  const dayHeaderRef = useRef<HTMLDivElement>(null)
+  const [headerHeight, setHeaderHeight] = useState(62)
+
   const bufferDates: Date[] = []
   for (let i = -Math.floor(BUFFER_DAYS/2); i < Math.ceil(BUFFER_DAYS/2); i++) {
     const d = new Date(centerDate)
@@ -141,12 +144,9 @@ export default function CalendrierPage() {
     loadBuffer(user.id)
   }, [user, centerDate])
 
-  // Auto-scroll vers la date courante (au centre du buffer) lors du chargement
   useEffect(() => {
     if (!loading && scrollContainerRef.current) {
-      // Position : 15 jours * largeur d'un jour, mais on veut centerDate visible à gauche
       const todayIdx = Math.floor(BUFFER_DAYS/2)
-      // On scroll pour que la date du centre soit la première visible à gauche
       scrollContainerRef.current.scrollLeft = todayIdx * DAY_WIDTH
     }
   }, [loading, centerDate])
@@ -156,6 +156,20 @@ export default function CalendrierPage() {
       loadGmail(user.id)
     }
   }, [sidePanel, user])
+
+  // Mesure la hauteur réelle de l'en-tête de jour pour aligner la colonne d'heures
+  useEffect(() => {
+    if (!dayHeaderRef.current) return
+    const measure = () => {
+      if (dayHeaderRef.current) {
+        setHeaderHeight(dayHeaderRef.current.offsetHeight)
+      }
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(dayHeaderRef.current)
+    return () => observer.disconnect()
+  }, [loading, showAddForm])
 
   async function checkGoogleConnection(uid: string) {
     const { data } = await supabase.from('users').select('google_access_token').eq('id', uid).single()
@@ -203,10 +217,6 @@ export default function CalendrierPage() {
 
   async function loadBuffer(uid: string) {
     const dateStrs = bufferDates.map(d => ymd(d))
-    const firstDateISO = bufferDates[0].toISOString()
-    const lastDate = new Date(bufferDates[bufferDates.length-1])
-    lastDate.setHours(23,59,59,999)
-    const lastDateISO = lastDate.toISOString()
 
     const { data: allTasks } = await supabase.from('tasks')
       .select('*, category:categories(name,color)')
@@ -282,7 +292,6 @@ export default function CalendrierPage() {
         })
         newTasksByDate.set(taskDateStr, arr)
       } else if (!t.is_done && new Date(t.scheduled_at) < bufferDates[0]) {
-        // Tâche dans le passé, hors buffer
         stillUnplanned.push(t)
       }
     })
@@ -290,7 +299,6 @@ export default function CalendrierPage() {
     setTasksByDate(newTasksByDate)
     setUnplanned(stillUnplanned)
 
-    // Charger les events Google en parallèle
     try {
       const results = await Promise.all(
         dateStrs.map(ds =>
@@ -663,7 +671,6 @@ export default function CalendrierPage() {
     setNewCat(categories[0]?.id || '')
   }
 
-  // Détecte le scroll pour recharger le buffer aux bords
   function handleScroll() {
     const el = scrollContainerRef.current
     if (!el || reloadingRef.current) return
@@ -671,7 +678,6 @@ export default function CalendrierPage() {
     const scrollLeft = el.scrollLeft
     const maxScroll = el.scrollWidth - el.clientWidth
 
-    // Si on s'approche du bord gauche (moins de 3 jours restants)
     if (scrollLeft < DAY_WIDTH * 3) {
       reloadingRef.current = true
       const newCenter = new Date(centerDate)
@@ -679,7 +685,6 @@ export default function CalendrierPage() {
       setCenterDate(newCenter)
       setTimeout(() => { reloadingRef.current = false }, 500)
     }
-    // Si on s'approche du bord droit
     else if (scrollLeft > maxScroll - DAY_WIDTH * 3) {
       reloadingRef.current = true
       const newCenter = new Date(centerDate)
@@ -710,7 +715,6 @@ export default function CalendrierPage() {
   const todayStr = ymd(new Date())
   const initials = user?.email?.split('@')[0].slice(0,2).toUpperCase() || 'ÉG'
 
-  // Range visible pour le titre (5 premiers jours du buffer après le centre)
   const firstVisible = bufferDates[Math.floor(BUFFER_DAYS/2)]
   const lastVisible = new Date(firstVisible)
   lastVisible.setDate(firstVisible.getDate() + 4)
@@ -722,10 +726,10 @@ export default function CalendrierPage() {
   )
 
   const subtasksDoneCount = editForm.subtasks.filter(s => s.done).length
+  const firstDateStr = ymd(bufferDates[0])
 
   return (
     <div style={{ display:'flex', minHeight:'100vh' }}>
-      {/* Sidebar */}
       <div style={{ width:'200px', background:'#111', display:'flex', flexDirection:'column', padding:'16px 0', flexShrink:0 }}>
         <div style={{ display:'flex', alignItems:'center', gap:'10px', padding:'0 16px', marginBottom:'24px', cursor:'pointer' }} onClick={() => window.location.href='/dashboard'}>
           <img src="/Grenier_Symbole_RGB.png" alt="Grenier" style={{ width:'32px', height:'32px', objectFit:'contain' }} />
@@ -754,7 +758,6 @@ export default function CalendrierPage() {
         </div>
       </div>
 
-      {/* Main */}
       <div style={{ flex:1, display:'flex', flexDirection:'column', minHeight:'100vh', minWidth:0 }}>
         <div style={{ background:'#111', padding:'10px 1rem', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0, gap:'12px' }}>
           <h1 style={{ fontSize:'15px', fontWeight:'500', color:'#F2E000' }}>Mon calendrier</h1>
@@ -806,14 +809,13 @@ export default function CalendrierPage() {
 
         <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
           <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'white' }}>
-            {/* Container scrollable horizontalement */}
             <div ref={scrollContainerRef} onScroll={handleScroll}
               style={{ flex:1, overflowX:'auto', overflowY:'auto', position:'relative' }}>
               <div style={{ display:'flex', minWidth:'fit-content' }}>
                 {/* Colonne des heures (sticky à gauche) */}
                 <div style={{ width:'48px', flexShrink:0, position:'sticky', left:0, background:'white', zIndex:10, borderRight:'0.5px solid rgba(0,0,0,0.08)' }}>
-                  {/* Header vide */}
-                  <div style={{ height:'62px', borderBottom:'0.5px solid rgba(0,0,0,0.08)', position:'sticky', top:0, background:'white', zIndex:11 }} />
+                  {/* Spacer aligné dynamiquement avec la hauteur du header de jour */}
+                  <div style={{ height: headerHeight + 'px', borderBottom:'0.5px solid rgba(0,0,0,0.08)', position:'sticky', top:0, background:'white', zIndex:11 }} />
                   {HOURS.map(h => (
                     <div key={h} style={{ height:`${PPH}px`, borderBottom:'0.5px solid rgba(0,0,0,0.05)', display:'flex', alignItems:'flex-start', justifyContent:'flex-end', padding:'0 6px 0 0', fontSize:'11px', color:'#bbb' }}>
                       {h}:00
@@ -830,11 +832,12 @@ export default function CalendrierPage() {
                     const dayTasks = tasksByDate.get(ds) || []
                     const dayGoogle = googleByDate.get(ds) || []
                     const isOver = dragOverDate === ds
+                    const isFirst = ds === firstDateStr
 
                     return (
                       <div key={ds} style={{ width:`${DAY_WIDTH}px`, flexShrink:0, borderRight:'0.5px solid rgba(0,0,0,0.08)' }}>
-                        {/* Header sticky */}
-                        <div style={{ position:'sticky', top:0, background: isWeekend ? '#fafaf6' : 'white', zIndex:5, borderBottom:'0.5px solid rgba(0,0,0,0.08)', padding:'8px 10px' }}>
+                        <div ref={isFirst ? dayHeaderRef : null}
+                          style={{ position:'sticky', top:0, background: isWeekend ? '#fafaf6' : 'white', zIndex:5, borderBottom:'0.5px solid rgba(0,0,0,0.08)', padding:'8px 10px' }}>
                           <div style={{ fontSize:'12px', fontWeight:'500', color: isToday ? '#3B6D11' : (isWeekend ? '#888' : '#111') }}>
                             {JOURS_LONG[d.getDay()]}
                           </div>
@@ -879,7 +882,6 @@ export default function CalendrierPage() {
                           )}
                         </div>
 
-                        {/* Grille horaire */}
                         <div onDragOver={e => onColDragOver(e, ds)}
                           onDragLeave={e => onColDragLeave(e, ds)}
                           onDrop={e => onColDrop(e, ds)}
