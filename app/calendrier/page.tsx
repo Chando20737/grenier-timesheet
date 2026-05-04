@@ -268,6 +268,8 @@ export default function CalendrierPage() {
             scheduled_at: t.scheduled_at,
             gmail_message_id: t.gmail_message_id,
             recurrence: t.recurrence,
+            notes: t.notes,
+            subtasks: Array.isArray(t.subtasks) ? t.subtasks : [],
           })
           newTasksByDate.set(dateStr, arr)
         })
@@ -288,6 +290,8 @@ export default function CalendrierPage() {
           category: t.category?.name,
           scheduled_at: t.scheduled_at,
           gmail_message_id: t.gmail_message_id,
+          notes: t.notes,
+          subtasks: Array.isArray(t.subtasks) ? t.subtasks : [],
         })
         newTasksByDate.set(taskDateStr, arr)
       } else if (!t.is_done && new Date(t.scheduled_at) < bufferDates[0]) {
@@ -330,32 +334,24 @@ export default function CalendrierPage() {
   }
 
   async function toggleTaskDone(task: any, ev?: React.MouseEvent) {
-  if (ev) ev.stopPropagation()
-  if (!user) return
+    if (ev) ev.stopPropagation()
+    if (!user) return
 
-  console.log('[toggleTaskDone]', {
-    taskId: task.id,
-    isRecurring: task.isRecurring,
-    isDone: task.isDone,
-    occurrenceDate: task.occurrenceDate,
-    title: task.title,
-  })
-
-  if (task.isRecurring) {
-    const newDone = !task.isDone
-    const { error } = await supabase.from('task_occurrences').upsert({
-      task_id: task.id,
-      occurrence_date: task.occurrenceDate,
-      is_done: newDone,
-    }, { onConflict: 'task_id,occurrence_date' })
-    if (error) console.log('[toggleTaskDone] occurrence error:', error)
-  } else {
-    const newDone = !task.isDone
-    const { error } = await supabase.from('tasks').update({ is_done: newDone }).eq('id', task.id)
-    if (error) console.log('[toggleTaskDone] task error:', error)
+    if (task.isRecurring) {
+      const newDone = !task.isDone
+      const { error } = await supabase.from('task_occurrences').upsert({
+        task_id: task.id,
+        occurrence_date: task.occurrenceDate,
+        is_done: newDone,
+      }, { onConflict: 'task_id,occurrence_date' })
+      if (error) console.log('[toggleTaskDone] occurrence error:', error)
+    } else {
+      const newDone = !task.isDone
+      const { error } = await supabase.from('tasks').update({ is_done: newDone }).eq('id', task.id)
+      if (error) console.log('[toggleTaskDone] task error:', error)
+    }
+    loadBuffer(user.id)
   }
-  loadBuffer(user.id)
-}
 
   function connectGoogle() {
     if (!user) return
@@ -534,12 +530,10 @@ export default function CalendrierPage() {
     window.location.href = '/dashboard'
   }
 
-  // Calcule la somme des durées des sous-tâches qui en ont une
   function sumSubtasksDur(subtasks: { dur?: number }[]): number {
     return subtasks.reduce((sum, s) => sum + (s.dur || 0), 0)
   }
 
-  // Si au moins une sous-tâche a une durée, met à jour automatiquement la durée principale
   function updateMainDurFromSubtasks(subtasks: { dur?: number }[]) {
     const total = sumSubtasksDur(subtasks)
     if (total > 0) {
@@ -960,6 +954,9 @@ export default function CalendrierPage() {
                             const top = (t.timeMin - 6*60) * PPM
                             const height = Math.max(t.dur * PPM, 20)
                             const isDone = t.isDone
+                            const hasNotes = t.notes && t.notes.trim().length > 0
+                            const subtasksCount = (t.subtasks || []).length
+                            const subtasksDone = (t.subtasks || []).filter((s: any) => s.done).length
                             return (
                               <div key={`t-${t.id}-${t.occurrenceDate || ''}-${idx}`}
                                 draggable={!t.isRecurring && !isDone}
@@ -975,7 +972,11 @@ export default function CalendrierPage() {
                                 <div style={{ fontSize:'10px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', textDecoration: isDone ? 'line-through' : 'none' }}>
                                   {t.isRecurring && '🔁 '}{t.gmail_message_id && '📧 '}{t.title.split('\n')[0]}
                                 </div>
-                                <div style={{ fontSize:'9px', opacity:0.7, marginTop:'1px' }}>{minToStr(t.timeMin)}</div>
+                                <div style={{ fontSize:'9px', opacity:0.7, marginTop:'1px', display:'flex', alignItems:'center', gap:'6px' }}>
+                                  <span>{minToStr(t.timeMin)}</span>
+                                  {hasNotes && <span title="Contient des notes">📝</span>}
+                                  {subtasksCount > 0 && <span title={`${subtasksDone} sous-tâche(s) faite(s) sur ${subtasksCount}`}>✅ {subtasksDone}/{subtasksCount}</span>}
+                                </div>
                               </div>
                             )
                           })}
