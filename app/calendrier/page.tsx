@@ -39,6 +39,25 @@ function formatFrom(from: string) {
   const m = from.match(/^"?([^"<]+)"?\s*<.*>$/)
   return m ? m[1].trim() : from
 }
+function formatEmailDate(dateStr: string): string {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return ''
+  const now = new Date()
+  const diffMs = now.getTime() - d.getTime()
+  const diffMin = Math.floor(diffMs / 60000)
+  const diffH = Math.floor(diffMin / 60)
+  const diffDays = Math.floor(diffH / 24)
+
+  if (diffMin < 1) return "À l'instant"
+  if (diffMin < 60) return `il y a ${diffMin} min`
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString('fr-CA', { hour:'2-digit', minute:'2-digit' })
+  }
+  if (diffDays === 1) return 'Hier'
+  if (diffDays < 7) return `il y a ${diffDays}j`
+  return `${d.getDate()} ${MOIS[d.getMonth()]}`
+}
 function ymd(d: Date): string {
   const yyyy = d.getFullYear()
   const mm = String(d.getMonth()+1).padStart(2,'0')
@@ -1043,7 +1062,10 @@ export default function CalendrierPage() {
                   {gmailMessages.map((m: any) => (
                     <div key={m.id} draggable onDragStart={e => onEmailDragStart(e, m)}
                       style={{ background:'white', border:'0.5px solid rgba(0,0,0,0.1)', borderLeft:'3px solid #D93025', borderRadius:'8px', padding:'8px 10px', cursor:'grab', userSelect:'none' }}>
-                      <div style={{ fontSize:'11px', color:'#888', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{formatFrom(m.from)}</div>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:'6px' }}>
+                        <div style={{ fontSize:'11px', color:'#888', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>{formatFrom(m.from)}</div>
+                        {m.date && <div style={{ fontSize:'10px', color:'#aaa', whiteSpace:'nowrap', flexShrink:0 }} title={new Date(m.date).toLocaleString('fr-CA')}>{formatEmailDate(m.date)}</div>}
+                      </div>
                       <div style={{ fontSize:'12px', fontWeight: m.unread ? '600' : '400', color:'#111', marginTop:'2px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{m.subject}</div>
                     </div>
                   ))}
