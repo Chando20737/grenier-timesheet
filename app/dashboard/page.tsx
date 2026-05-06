@@ -34,6 +34,7 @@ export default function DashboardPage() {
   const [description, setDescription] = useState('')
   const [catId, setCatId] = useState('')
   const [showTaskList, setShowTaskList] = useState(false)
+  const [selectedTask, setSelectedTask] = useState<any>(null)
   const [running, setRunning] = useState(false)
   const [paused, setPaused] = useState(false)
   const [elapsed, setElapsed] = useState(0)
@@ -76,6 +77,7 @@ export default function DashboardPage() {
           if (s.userId === data.user.id) {
             setDescription(s.description || '')
             setCatId(s.catId || '')
+            if (s.selectedTask) setSelectedTask(s.selectedTask)
             setStartTime(s.startTime || null)
             if (s.running && s.startTime) {
               const now = Date.now()
@@ -110,11 +112,12 @@ export default function DashboardPage() {
         running,
         paused,
         lastTick: Date.now(),
+        selectedTask,
       }))
     } else {
       localStorage.removeItem('grenier-timer')
     }
-  }, [user, description, catId, startTime, elapsed, running, paused])
+  }, [user, description, catId, startTime, elapsed, running, paused, selectedTask])
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -205,6 +208,7 @@ export default function DashboardPage() {
   function selectTask(task: any) {
     setDescription(task.description)
     if (task.category?.id) setCatId(task.category.id)
+    setSelectedTask(task)
     setShowTaskList(false)
   }
 
@@ -231,6 +235,7 @@ export default function DashboardPage() {
   async function saveEntry() {
     if (!user || elapsed < 5) {
       setElapsed(0); setStartTime(null); setDescription('')
+      setSelectedTask(null)
       localStorage.removeItem('grenier-timer')
       return
     }
@@ -244,10 +249,41 @@ export default function DashboardPage() {
       duration: elapsed,
       source: 'timer'
     })
+
+    // Si l'entrée est liée à une tâche du menu déroulant, demander si on la marque comme terminée
+    if (selectedTask) {
+      const taskName = selectedTask.description.split('\n')[0]
+      const shouldMarkDone = confirm(`Marquer la tâche « ${taskName} » comme terminée ?`)
+      if (shouldMarkDone) {
+        if (selectedTask.recurrence) {
+          // Tâche récurrente : cocher l'occurrence d'aujourd'hui
+          const today = new Date()
+          const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
+          await supabase.from('task_occurrences').upsert({
+            task_id: selectedTask.id,
+            occurrence_date: todayStr,
+            is_done: true,
+          }, { onConflict: 'task_id,occurrence_date' })
+        } else {
+          // Tâche normale : marquer is_done = true
+          // Si pas de date, lui en donner une (l'heure de début du chrono) avec la durée mesurée
+          const updates: any = { is_done: true }
+          if (!selectedTask.scheduled_at) {
+            const taskStartTime = startTime ? new Date(startTime) : new Date()
+            updates.scheduled_at = taskStartTime.toISOString()
+            updates.estimated_duration = Math.ceil(elapsed / 60) + ' min'
+          }
+          await supabase.from('tasks').update(updates).eq('id', selectedTask.id)
+        }
+      }
+    }
+
     setElapsed(0); setDescription(''); setStartTime(null)
+    setSelectedTask(null)
     localStorage.removeItem('grenier-timer')
     loadEntries(user.id, date)
     loadTotals(user.id)
+    loadTasks(user.id)
   }
 
   async function saveManual() {
@@ -384,7 +420,7 @@ export default function DashboardPage() {
               <input style={{ width:'100%', border:'none', background:'transparent', fontSize:'14px', outline:'none' }}
                 placeholder="Sur quoi travailles-tu ?"
                 value={description}
-                onChange={e => { setDescription(e.target.value); setShowTaskList(true) }}
+                onChange={e => { setDescription(e.target.value); setShowTaskList(true); setSelectedTask(null) }}
                 onFocus={() => setShowTaskList(true)} />
 
               {showTaskList && filteredTasks.length > 0 && (
@@ -457,6 +493,12 @@ export default function DashboardPage() {
           {timerState === 'paused' && (
             <div style={{ fontSize:'11px', color:'#888', marginTop:'-6px', paddingLeft:'14px' }}>
               ⏸ Chrono en pause — cliquez sur ▶ pour reprendre ou ⏹ pour sauvegarder
+            </div>
+          )}
+
+          {selectedTask && (running || paused) && (
+            <div style={{ fontSize:'11px', color:'#3B6D11', marginTop:'-6px', paddingLeft:'14px', display:'flex', alignItems:'center', gap:'4px' }}>
+              🔗 Lié à la tâche : <strong>{selectedTask.description.split('\n')[0]}</strong>
             </div>
           )}
 
