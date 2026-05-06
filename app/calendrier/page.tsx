@@ -534,6 +534,14 @@ export default function CalendrierPage() {
         }
       } catch {}
     }
+    // Création d'un objet selectedTask compatible avec le dashboard
+    const selectedTask = {
+      id: editTask.id,
+      description: editForm.title || editTask.description || '',
+      recurrence: editTask.recurrence,
+      scheduled_at: editTask.scheduled_at,
+      category: editTask.category,
+    }
     const timerState = {
       userId: user.id,
       description: editForm.title || editTask.description || '',
@@ -543,6 +551,7 @@ export default function CalendrierPage() {
       running: true,
       paused: false,
       lastTick: Date.now(),
+      selectedTask,
     }
     localStorage.setItem('grenier-timer', JSON.stringify(timerState))
     setEditTask(null)
