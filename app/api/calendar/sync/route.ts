@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SECRET_KEY!
@@ -73,10 +76,13 @@ export async function GET(req: NextRequest) {
   let accessToken = user.google_access_token
 
   const fetchEvents = async (token: string) => {
-    return fetch(
-      `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&orderBy=startTime`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    )
+    // showDeleted=false : exclure les événements supprimés
+    // singleEvents=true : "exploser" les événements récurrents en occurrences individuelles
+    const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&showDeleted=false&orderBy=startTime`
+    return fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    })
   }
 
   let res = await fetchEvents(accessToken)
@@ -94,25 +100,34 @@ export async function GET(req: NextRequest) {
   }
 
   const data = await res.json()
-  const events = (data.items || []).map((e: any) => ({
-  id: e.id,
-  title: e.summary || 'Sans titre',
-  start: e.start?.dateTime || e.start?.date,
-  end: e.end?.dateTime || e.end?.date,
-  allDay: !e.start?.dateTime,
-  description: e.description || null,
-  location: e.location || null,
-  hangoutLink: e.hangoutLink || null,
-  htmlLink: e.htmlLink || null,
-  organizer: e.organizer ? { email: e.organizer.email, name: e.organizer.displayName } : null,
-  attendees: (e.attendees || []).map((a: any) => ({
-    email: a.email,
-    name: a.displayName,
-    responseStatus: a.responseStatus,
-    organizer: a.organizer || false,
-    self: a.self || false,
-  })),
-}))
 
-  return NextResponse.json({ events })
+  // Filtre supplémentaire : exclure tout événement marqué "cancelled" par sécurité
+  const events = (data.items || [])
+    .filter((e: any) => e.status !== 'cancelled')
+    .map((e: any) => ({
+      id: e.id,
+      title: e.summary || 'Sans titre',
+      start: e.start?.dateTime || e.start?.date,
+      end: e.end?.dateTime || e.end?.date,
+      allDay: !e.start?.dateTime,
+      description: e.description || null,
+      location: e.location || null,
+      hangoutLink: e.hangoutLink || null,
+      htmlLink: e.htmlLink || null,
+      organizer: e.organizer ? { email: e.organizer.email, name: e.organizer.displayName } : null,
+      attendees: (e.attendees || []).map((a: any) => ({
+        email: a.email,
+        name: a.displayName,
+        responseStatus: a.responseStatus,
+        organizer: a.organizer || false,
+        self: a.self || false,
+      })),
+    }))
+
+  return NextResponse.json({ events }, {
+    headers: {
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      'Pragma': 'no-cache',
+    },
+  })
 }
