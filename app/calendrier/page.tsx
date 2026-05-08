@@ -88,6 +88,7 @@ function uid() { return Math.random().toString(36).slice(2,10) }
 export default function CalendrierPage() {
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [centerDate, setCenterDate] = useState<Date>(() => {
     const d = new Date(); d.setHours(0,0,0,0); return d
   })
@@ -324,7 +325,10 @@ export default function CalendrierPage() {
     try {
       const results = await Promise.all(
         dateStrs.map(ds =>
-          fetch(`/api/calendar/sync?userId=${uid}&date=${ds}`)
+          fetch(`/api/calendar/sync?userId=${uid}&date=${ds}&t=${Date.now()}`, {
+            cache: 'no-store',
+            headers: { 'Cache-Control': 'no-cache' },
+          })
             .then(r => r.status === 401 ? { events: [] } : r.json())
             .catch(() => ({ events: [] }))
         )
@@ -350,6 +354,13 @@ export default function CalendrierPage() {
     } catch {
       setGoogleByDate(new Map())
     }
+  }
+
+  async function refreshCalendar() {
+    if (!user || refreshing) return
+    setRefreshing(true)
+    await loadBuffer(user.id)
+    setTimeout(() => setRefreshing(false), 500)
   }
 
   async function toggleTaskDone(task: any, ev?: React.MouseEvent) {
@@ -534,7 +545,6 @@ export default function CalendrierPage() {
         }
       } catch {}
     }
-    // Création d'un objet selectedTask compatible avec le dashboard
     const selectedTask = {
       id: editTask.id,
       description: editForm.title || editTask.description || '',
@@ -840,9 +850,18 @@ export default function CalendrierPage() {
               Connecter Google Agenda
             </button>
           ) : (
-            <div style={{ display:'flex', alignItems:'center', gap:'6px', fontSize:'12px', color:'rgba(255,255,255,0.5)' }}>
-              <div style={{ width:'7px', height:'7px', borderRadius:'50%', background:'#34A853' }} />
-              Google Agenda connecté
+            <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'6px', fontSize:'12px', color:'rgba(255,255,255,0.5)' }}>
+                <div style={{ width:'7px', height:'7px', borderRadius:'50%', background:'#34A853' }} />
+                Google Agenda connecté
+              </div>
+              <button
+                onClick={refreshCalendar}
+                disabled={refreshing}
+                title="Rafraîchir le calendrier"
+                style={{ background:'rgba(255,255,255,0.1)', border:'none', borderRadius:'6px', width:'28px', height:'28px', display:'flex', alignItems:'center', justifyContent:'center', cursor: refreshing ? 'wait' : 'pointer', color:'white', fontSize:'14px', transition:'all 0.2s' }}>
+                <span style={{ display:'inline-block', transition:'transform 0.5s', transform: refreshing ? 'rotate(360deg)' : 'rotate(0deg)' }}>↻</span>
+              </button>
             </div>
           )}
         </div>
