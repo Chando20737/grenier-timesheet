@@ -119,6 +119,18 @@ export default function DashboardPage() {
     }
   }, [user, description, catId, startTime, elapsed, running, paused, selectedTask])
 
+  // Synchronise le compteur quand l'onglet redevient visible (corrige le ralentissement de setInterval en arrière-plan)
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible' && running && startTime) {
+        const realElapsed = Math.floor((Date.now() - new Date(startTime).getTime()) / 1000)
+        setElapsed(realElapsed)
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [running, startTime])
+
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (taskWrapRef.current && !taskWrapRef.current.contains(e.target as Node)) {
@@ -233,20 +245,26 @@ export default function DashboardPage() {
   }
 
   async function saveEntry() {
-    if (!user || elapsed < 5) {
+    // Calcule la vraie durée à partir des timestamps (résistant aux onglets en arrière-plan)
+    const endTime = new Date().toISOString()
+    const realDuration = startTime
+      ? Math.floor((new Date(endTime).getTime() - new Date(startTime).getTime()) / 1000)
+      : elapsed
+
+    if (!user || realDuration < 5) {
       setElapsed(0); setStartTime(null); setDescription('')
       setSelectedTask(null)
       localStorage.removeItem('grenier-timer')
       return
     }
-    const endTime = new Date().toISOString()
+
     await supabase.from('time_entries').insert({
       user_id: user.id,
       description: description || 'Tâche sans titre',
       category_id: catId || null,
       started_at: startTime,
       ended_at: endTime,
-      duration: elapsed,
+      duration: realDuration,
       source: 'timer'
     })
 
@@ -271,7 +289,7 @@ export default function DashboardPage() {
           if (!selectedTask.scheduled_at) {
             const taskStartTime = startTime ? new Date(startTime) : new Date()
             updates.scheduled_at = taskStartTime.toISOString()
-            updates.estimated_duration = Math.ceil(elapsed / 60) + ' min'
+            updates.estimated_duration = Math.ceil(realDuration / 60) + ' min'
           }
           await supabase.from('tasks').update(updates).eq('id', selectedTask.id)
         }
