@@ -1,5 +1,0 @@
-URL           = qnrfzfwvddrgyscnxfhh.supabase.com
-
-CLÉ 1        = sb_publishable_H_6sCN-PQrwzCe8wr3SLHA_kU8c03LL
-
-CLÉ 2        = sb_secret__HyzcRJXd3JpYMwG3fvSgA_Zg3vN2hL

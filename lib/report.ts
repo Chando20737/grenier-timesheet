@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer'
-import { supabaseAdmin } from './supabase'
+import { supabaseAdmin } from './supabaseAdmin'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 

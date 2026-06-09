@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 
-const url = 'https://qnrfzfwvddrgyscnxfhh.supabase.co'
-const key = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFucmZ6Znd2ZGRyZ3lzY254ZmhoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczMTczOTUsImV4cCI6MjA5Mjg5MzM5NX0.bxiwa54-SECHk8361Gt0MZjV7ktAmtAh67GuKMkHvYI'
+// Client public (clé « publishable »/anon) — protégé par les politiques RLS.
+// Utilisable côté navigateur ; les variables NEXT_PUBLIC_* sont exposées au client.
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
 
-export const supabase = createClient(url, key)
-export const supabaseAdmin = createClient(url, key)
+export const supabase = createClient(supabaseUrl, supabaseKey)
