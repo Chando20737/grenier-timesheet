@@ -141,6 +141,42 @@ export default function DashboardPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  // Repousse à « maintenant », chaque minute, les tâches normales non terminées
+  // dont l'heure est passée. Elles restent ainsi en haut de la liste jusqu'à ce
+  // qu'on les marque terminées (is_done = true les sort du roulement).
+  // Actif uniquement tant que l'onglet est ouvert. Les tâches récurrentes sont
+  // volontairement exclues (leur scheduled_at sert d'ancre de récurrence) et
+  // demeurent gérées par le cron quotidien /api/cron/roll-tasks.
+  useEffect(() => {
+    if (!user) return
+
+    async function rollOverdueTasks() {
+      const now = new Date()
+      now.setSeconds(0, 0)
+      const nowIso = now.toISOString()
+      const { data: bumped } = await supabase.from('tasks')
+        .update({ scheduled_at: nowIso })
+        .eq('user_id', user.id)
+        .eq('is_done', false)
+        .is('recurrence', null)
+        .not('scheduled_at', 'is', null)
+        .lt('scheduled_at', nowIso)
+        .select('id')
+      if (bumped && bumped.length > 0) loadTasks(user.id)
+    }
+
+    rollOverdueTasks()
+    const id = setInterval(rollOverdueTasks, 60_000)
+    function onVisible() {
+      if (document.visibilityState === 'visible') rollOverdueTasks()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [user])
+
   async function loadCategories(uid: string) {
     const { data } = await supabase.from('categories').select('*').or(`user_id.eq.${uid},is_global.eq.true`).order('name')
     setCategories(data || [])
