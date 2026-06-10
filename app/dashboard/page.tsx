@@ -50,6 +50,8 @@ export default function DashboardPage() {
   const [monthTotal, setMonthTotal] = useState(0)
   const interval = useRef<any>(null)
   const taskWrapRef = useRef<HTMLDivElement>(null)
+  // Tâche en cours de chronométrage : on ne la repousse pas (on est en train de la faire)
+  const activeTaskIdRef = useRef<string | null>(null)
 
   // Modification d'une entrée existante
   const [editEntry, setEditEntry] = useState<any>(null)
@@ -147,6 +149,11 @@ export default function DashboardPage() {
   // Actif uniquement tant que l'onglet est ouvert. Les tâches récurrentes sont
   // volontairement exclues (leur scheduled_at sert d'ancre de récurrence) et
   // demeurent gérées par le cron quotidien /api/cron/roll-tasks.
+  // Garde à jour l'id de la tâche actuellement chronométrée (en marche ou en pause)
+  useEffect(() => {
+    activeTaskIdRef.current = (running || paused) && selectedTask?.id ? selectedTask.id : null
+  }, [running, paused, selectedTask])
+
   useEffect(() => {
     if (!user) return
 
@@ -154,14 +161,17 @@ export default function DashboardPage() {
       const now = new Date()
       now.setSeconds(0, 0)
       const nowIso = now.toISOString()
-      const { data: bumped } = await supabase.from('tasks')
+      let query = supabase.from('tasks')
         .update({ scheduled_at: nowIso })
         .eq('user_id', user.id)
         .eq('is_done', false)
         .is('recurrence', null)
         .not('scheduled_at', 'is', null)
         .lt('scheduled_at', nowIso)
-        .select('id')
+      // Ne pas repousser la tâche qu'on est en train de chronométrer
+      const activeId = activeTaskIdRef.current
+      if (activeId) query = query.neq('id', activeId)
+      const { data: bumped } = await query.select('id')
       if (bumped && bumped.length > 0) loadTasks(user.id)
     }
 
