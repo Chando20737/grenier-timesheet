@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useDueTaskNotifications } from '@/lib/useDueTaskNotifications'
 
 const JOURS_LONG = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi']
 const MOIS = ['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc']
@@ -88,6 +89,8 @@ function uid() { return Math.random().toString(36).slice(2,10) }
 export default function CalendrierPage() {
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  // Notifications « tâche due à l'heure prévue » (hook partagé, onglet ouvert seulement)
+  const { notifPerm, enableNotifications, dueToast, dismissToast } = useDueTaskNotifications(user?.id)
   const [refreshing, setRefreshing] = useState(false)
   const [centerDate, setCenterDate] = useState<Date>(() => {
     const d = new Date(); d.setHours(0,0,0,0); return d
@@ -811,6 +814,20 @@ export default function CalendrierPage() {
 
   return (
     <div style={{ display:'flex', minHeight:'100vh' }}>
+      {dueToast.length > 0 && (
+        <div style={{ position:'fixed', top:'16px', right:'16px', zIndex:200, display:'flex', flexDirection:'column', gap:'8px', maxWidth:'320px' }}>
+          {dueToast.map(t => (
+            <div key={t.id} style={{ background:'#111', color:'white', borderLeft:'4px solid #FFFF00', borderRadius:'8px', padding:'10px 12px', boxShadow:'0 4px 16px rgba(0,0,0,0.25)', display:'flex', alignItems:'flex-start', gap:'10px' }}>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:'11px', color:'#FFFF00', fontWeight:600, marginBottom:'2px' }}>⏰ C'est l'heure</div>
+                <div style={{ fontSize:'13px' }}>{t.description}</div>
+              </div>
+              <button onClick={() => dismissToast(t.id)}
+                style={{ background:'none', border:'none', color:'rgba(255,255,255,0.5)', cursor:'pointer', fontSize:'14px', lineHeight:1 }}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
       <div style={{ width:'200px', background:'#111', display:'flex', flexDirection:'column', padding:'16px 0', flexShrink:0 }}>
         <div style={{ display:'flex', alignItems:'center', gap:'10px', padding:'0 16px', marginBottom:'24px', cursor:'pointer' }} onClick={() => window.location.href='/dashboard'}>
           <img src="/Grenier_Symbole_RGB.png" alt="Grenier" style={{ width:'32px', height:'32px', objectFit:'contain' }} />
@@ -886,7 +903,13 @@ export default function CalendrierPage() {
           <span style={{ fontSize:'13px', color:'rgba(255,255,255,0.8)', fontWeight:'500' }}>
             {firstVisible.getDate()} {MOIS[firstVisible.getMonth()]} – {lastVisible.getDate()} {MOIS[lastVisible.getMonth()]} {lastVisible.getFullYear()}
           </span>
-          <div style={{ width:'180px' }} />
+          <div style={{ width:'180px', display:'flex', justifyContent:'flex-end' }}>
+            <button onClick={enableNotifications}
+              title={notifPerm==='granted' ? 'Notifications activées' : notifPerm==='denied' ? 'Notifications bloquées — réactive-les dans les réglages du navigateur' : 'Activer les notifications du navigateur'}
+              style={{ background:'rgba(255,255,255,0.1)', border:'none', borderRadius:'6px', padding:'4px 9px', fontSize:'12px', color:'white', cursor: notifPerm==='granted' ? 'default' : 'pointer' }}>
+              {notifPerm==='granted' ? '🔔' : notifPerm==='denied' ? '🔕' : '🔔 Activer'}
+            </button>
+          </div>
         </div>
 
         <div style={{ display:'flex', gap:'12px', padding:'7px 1rem', background:'white', borderBottom:'0.5px solid rgba(0,0,0,0.08)', flexShrink:0 }}>
