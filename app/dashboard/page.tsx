@@ -52,6 +52,13 @@ export default function DashboardPage() {
   const taskWrapRef = useRef<HTMLDivElement>(null)
   // Tâche en cours de chronométrage : on ne la repousse pas (on est en train de la faire)
   const activeTaskIdRef = useRef<string | null>(null)
+  // Notifications « tâche due à l'heure prévue » (onglet ouvert seulement)
+  const tasksRef = useRef<any[]>([])
+  const tasksLoadedRef = useRef(false)
+  const notifiedIdsRef = useRef<Set<string>>(new Set())
+  const notifSeededRef = useRef(false)
+  const [notifPerm, setNotifPerm] = useState<NotificationPermission>('default')
+  const [dueToast, setDueToast] = useState<{ id: string; description: string }[]>([])
 
   // Modification d'une entrée existante
   const [editEntry, setEditEntry] = useState<any>(null)
@@ -187,6 +194,79 @@ export default function DashboardPage() {
     }
   }, [user])
 
+  // Miroir de `tasks` pour les intervalles (évite les closures périmées)
+  useEffect(() => { tasksRef.current = tasks }, [tasks])
+
+  // Lit l'état de permission de notification au montage
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) setNotifPerm(Notification.permission)
+  }, [])
+
+  // Notifie une fois lorsqu'une tâche (normale) atteint son heure prévue :
+  // notification système (si autorisée) + bannière + petit son. Onglet ouvert seulement.
+  useEffect(() => {
+    if (!user) return
+    function playChime() {
+      try {
+        const AC = (window as any).AudioContext || (window as any).webkitAudioContext
+        if (!AC) return
+        const ctx = new AC()
+        const o = ctx.createOscillator(), g = ctx.createGain()
+        o.connect(g); g.connect(ctx.destination)
+        o.type = 'sine'; o.frequency.value = 880
+        g.gain.setValueAtTime(0.0001, ctx.currentTime)
+        g.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02)
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.45)
+        o.start(); o.stop(ctx.currentTime + 0.45)
+      } catch {}
+    }
+    function check() {
+      if (!tasksLoadedRef.current) return
+      const now = Date.now()
+      const due = (tasksRef.current || []).filter((t: any) =>
+        !t.is_done && !t.recurrence && t.scheduled_at && new Date(t.scheduled_at).getTime() <= now)
+      const dueIds = new Set(due.map((t: any) => t.id))
+      // Réarme une tâche qui n'est plus due (terminée ou reportée plus tard)
+      Array.from(notifiedIdsRef.current).forEach(id => { if (!dueIds.has(id)) notifiedIdsRef.current.delete(id) })
+      // Première passe : mémoriser les tâches déjà dues sans notifier (pas de rafale au chargement)
+      if (!notifSeededRef.current) {
+        due.forEach((t: any) => notifiedIdsRef.current.add(t.id))
+        notifSeededRef.current = true
+        return
+      }
+      const fresh = due.filter((t: any) => !notifiedIdsRef.current.has(t.id))
+      if (fresh.length === 0) return
+      fresh.forEach((t: any) => notifiedIdsRef.current.add(t.id))
+      playChime()
+      if ('Notification' in window && Notification.permission === 'granted') {
+        fresh.forEach((t: any) => {
+          try { new Notification("C'est l'heure d'une tâche", { body: t.description, tag: 'grenier-task-' + t.id }) } catch {}
+        })
+      }
+      setDueToast(prev => {
+        const seen = new Set(prev.map(p => p.id))
+        return [...prev, ...fresh.filter((t: any) => !seen.has(t.id)).map((t: any) => ({ id: t.id, description: t.description }))]
+      })
+    }
+    check()
+    const id = setInterval(check, 30_000)
+    function onVisible() { if (document.visibilityState === 'visible') check() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVisible) }
+  }, [user])
+
+  // Auto-fermeture des bannières après 25 s
+  useEffect(() => {
+    if (dueToast.length === 0) return
+    const id = setTimeout(() => setDueToast([]), 25_000)
+    return () => clearTimeout(id)
+  }, [dueToast])
+
+  function enableNotifications() {
+    if (typeof window === 'undefined' || !('Notification' in window)) return
+    Notification.requestPermission().then(p => setNotifPerm(p)).catch(() => {})
+  }
+
   async function loadCategories(uid: string) {
     const { data } = await supabase.from('categories').select('*').or(`user_id.eq.${uid},is_global.eq.true`).order('name')
     setCategories(data || [])
@@ -200,7 +280,7 @@ export default function DashboardPage() {
       .eq('is_done', false)
       .order('scheduled_at', { ascending: true, nullsFirst: false })
 
-    if (!allTasks) { setTasks([]); return }
+    if (!allTasks) { setTasks([]); tasksLoadedRef.current = true; return }
 
     // Charger les occurrences récurrentes faites aujourd'hui
     const today = new Date()
@@ -222,6 +302,7 @@ export default function DashboardPage() {
     // Filtrer : exclure les tâches récurrentes dont l'occurrence d'aujourd'hui est faite
     const filtered = allTasks.filter(t => !t.recurrence || !doneOccurrenceIds.has(t.id))
     setTasks(filtered)
+    tasksLoadedRef.current = true
   }
 
   async function loadEntries(uid: string, d: Date) {
@@ -440,6 +521,20 @@ export default function DashboardPage() {
 
   return (
     <div style={{ display:'flex', minHeight:'100vh' }}>
+      {dueToast.length > 0 && (
+        <div style={{ position:'fixed', top:'16px', right:'16px', zIndex:200, display:'flex', flexDirection:'column', gap:'8px', maxWidth:'320px' }}>
+          {dueToast.map(t => (
+            <div key={t.id} style={{ background:'#111', color:'white', borderLeft:'4px solid #FFFF00', borderRadius:'8px', padding:'10px 12px', boxShadow:'0 4px 16px rgba(0,0,0,0.25)', display:'flex', alignItems:'flex-start', gap:'10px' }}>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:'11px', color:'#FFFF00', fontWeight:600, marginBottom:'2px' }}>⏰ C'est l'heure</div>
+                <div style={{ fontSize:'13px' }}>{t.description}</div>
+              </div>
+              <button onClick={() => setDueToast(prev => prev.filter(p => p.id !== t.id))}
+                style={{ background:'none', border:'none', color:'rgba(255,255,255,0.5)', cursor:'pointer', fontSize:'14px', lineHeight:1 }}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
       <div style={{ width:'200px', background:'#111', display:'flex', flexDirection:'column', padding:'16px 0', flexShrink:0 }}>
         <div style={{ display:'flex', alignItems:'center', gap:'10px', padding:'0 16px', marginBottom:'24px', cursor:'pointer' }} onClick={() => window.location.href='/dashboard'}>
           <img src="/Grenier_Symbole_RGB.png" alt="Grenier" style={{ width:'32px', height:'32px', objectFit:'contain' }} />
@@ -472,6 +567,11 @@ export default function DashboardPage() {
         <div style={{ background:'#111', padding:'14px 1.25rem', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
           <h1 style={{ fontSize:'15px', fontWeight:'500', color:'#FFFF00' }}>Minuterie du jour</h1>
           <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
+            <button onClick={enableNotifications}
+              title={notifPerm==='granted' ? 'Notifications activées' : notifPerm==='denied' ? 'Notifications bloquées — réactive-les dans les réglages du navigateur' : 'Activer les notifications du navigateur'}
+              style={{ background:'rgba(255,255,255,0.1)', border:'none', borderRadius:'6px', padding:'4px 9px', fontSize:'12px', color:'white', cursor: notifPerm==='granted' ? 'default' : 'pointer' }}>
+              {notifPerm==='granted' ? '🔔' : notifPerm==='denied' ? '🔕' : '🔔 Activer'}
+            </button>
             <button onClick={() => shiftDay(-1)} style={{ background:'rgba(255,255,255,0.1)', border:'none', borderRadius:'6px', padding:'4px 9px', fontSize:'12px', color:'white', cursor:'pointer' }}>←</button>
             <span style={{ fontSize:'13px', color:'rgba(255,255,255,0.7)', minWidth:'90px', textAlign:'center' }}>{dayLabel}</span>
             <button onClick={() => shiftDay(1)} style={{ background:'rgba(255,255,255,0.1)', border:'none', borderRadius:'6px', padding:'4px 9px', fontSize:'12px', color:'white', cursor:'pointer' }}>→</button>
