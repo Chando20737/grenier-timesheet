@@ -13,7 +13,6 @@ export function useDueTaskNotifications(userId: string | undefined) {
   const [notifPerm, setNotifPerm] = useState<NotificationPermission>('default')
   const [dueToast, setDueToast] = useState<DueToast[]>([])
   const notifiedIdsRef = useRef<Set<string>>(new Set())
-  const seededRef = useRef(false)
 
   // Lit l'état de permission au montage
   useEffect(() => {
@@ -54,27 +53,24 @@ export function useDueTaskNotifications(userId: string | undefined) {
       // Réarme une tâche qui n'est plus due (terminée ou reportée plus tard)
       Array.from(notifiedIdsRef.current).forEach(id => { if (!dueIds.has(id)) notifiedIdsRef.current.delete(id) })
 
-      // Première passe : mémoriser les tâches déjà dues sans notifier (pas de rafale au chargement)
-      if (!seededRef.current) {
-        due.forEach((t: any) => notifiedIdsRef.current.add(t.id))
-        seededRef.current = true
-        return
-      }
-
       const fresh = due.filter((t: any) => !notifiedIdsRef.current.has(t.id))
       if (fresh.length === 0) return
       fresh.forEach((t: any) => notifiedIdsRef.current.add(t.id))
 
       playChime()
-      if ('Notification' in window && Notification.permission === 'granted') {
-        fresh.forEach((t: any) => {
-          try { new Notification("C'est l'heure d'une tâche", { body: t.description, tag: 'grenier-task-' + t.id }) } catch {}
-        })
+      const granted = 'Notification' in window && Notification.permission === 'granted'
+      if (fresh.length === 1) {
+        // Une seule tâche : notification détaillée
+        const t = fresh[0]
+        if (granted) { try { new Notification("C'est l'heure d'une tâche", { body: t.description, tag: 'grenier-task-' + t.id }) } catch {} }
+        setDueToast(prev => prev.some(p => p.id === t.id) ? prev : [...prev, { id: t.id, description: t.description }])
+      } else {
+        // Plusieurs d'un coup (ex. à l'ouverture) : un seul message groupé, pas de rafale
+        const msg = `${fresh.length} tâches à faire maintenant`
+        const groupId = 'group:' + fresh.map((t: any) => t.id).join(',')
+        if (granted) { try { new Notification('Tâches à faire', { body: msg, tag: 'grenier-tasks-due' }) } catch {} }
+        setDueToast(prev => prev.some(p => p.id === groupId) ? prev : [...prev, { id: groupId, description: msg }])
       }
-      setDueToast(prev => {
-        const seen = new Set(prev.map(p => p.id))
-        return [...prev, ...fresh.filter((t: any) => !seen.has(t.id)).map((t: any) => ({ id: t.id, description: t.description }))]
-      })
     }
 
     check()
