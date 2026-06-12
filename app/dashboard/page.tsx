@@ -443,12 +443,12 @@ export default function DashboardPage() {
       <div style={{ width:'200px', background:'#111', display:'flex', flexDirection:'column', padding:'16px 0', flexShrink:0 }}>
         <div style={{ display:'flex', alignItems:'center', gap:'10px', padding:'0 16px', marginBottom:'24px', cursor:'pointer' }} onClick={() => window.location.href='/dashboard'}>
           <img src="/Grenier_Symbole_RGB.png" alt="Grenier" style={{ width:'32px', height:'32px', objectFit:'contain' }} />
-          <span style={{ color:'#F2E000', fontSize:'16px', fontWeight:'500' }}>Grenier</span>
+          <span style={{ color:'#FFFF00', fontSize:'16px', fontWeight:'500' }}>Grenier</span>
         </div>
         <div style={{ display:'flex', flexDirection:'column', gap:'2px', padding:'0 8px' }}>
           {navItems.map(item => (
             <div key={item.href} onClick={() => window.location.href=item.href}
-              style={{ display:'flex', alignItems:'center', gap:'10px', padding:'9px 10px', borderRadius:'8px', cursor:'pointer', background: item.active ? '#F2E000' : 'transparent', color: item.active ? '#111' : 'rgba(255,255,255,0.6)' }}
+              style={{ display:'flex', alignItems:'center', gap:'10px', padding:'9px 10px', borderRadius:'8px', cursor:'pointer', background: item.active ? '#FFFF00' : 'transparent', color: item.active ? '#111' : 'rgba(255,255,255,0.6)' }}
               onMouseEnter={e => { if (!item.active) (e.currentTarget as HTMLElement).style.background='rgba(255,255,255,0.08)' }}
               onMouseLeave={e => { if (!item.active) (e.currentTarget as HTMLElement).style.background='transparent' }}>
               {item.icon}
@@ -462,7 +462,7 @@ export default function DashboardPage() {
             style={{ display:'flex', alignItems:'center', gap:'10px', padding:'9px 10px', borderRadius:'8px', cursor:'pointer', color:'rgba(255,255,255,0.5)' }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.background='rgba(255,255,255,0.08)'}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.background='transparent'}>
-            <div style={{ width:'26px', height:'26px', borderRadius:'50%', background:'#F2E000', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'10px', fontWeight:'500', color:'#111' }}>{initials}</div>
+            <div style={{ width:'26px', height:'26px', borderRadius:'50%', background:'#FFFF00', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'10px', fontWeight:'500', color:'#111' }}>{initials}</div>
             <span style={{ fontSize:'12px' }}>Déconnexion</span>
           </div>
         </div>
@@ -470,7 +470,7 @@ export default function DashboardPage() {
 
       <div style={{ flex:1, display:'flex', flexDirection:'column', minHeight:'100vh' }}>
         <div style={{ background:'#111', padding:'14px 1.25rem', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-          <h1 style={{ fontSize:'15px', fontWeight:'500', color:'#F2E000' }}>Minuterie du jour</h1>
+          <h1 style={{ fontSize:'15px', fontWeight:'500', color:'#FFFF00' }}>Minuterie du jour</h1>
           <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
             <button onClick={() => shiftDay(-1)} style={{ background:'rgba(255,255,255,0.1)', border:'none', borderRadius:'6px', padding:'4px 9px', fontSize:'12px', color:'white', cursor:'pointer' }}>←</button>
             <span style={{ fontSize:'13px', color:'rgba(255,255,255,0.7)', minWidth:'90px', textAlign:'center' }}>{dayLabel}</span>
@@ -522,7 +522,7 @@ export default function DashboardPage() {
 
             {timerState === 'idle' && (
               <button onClick={startTimer} title="Démarrer"
-                style={{ width:'34px', height:'34px', borderRadius:'50%', background:'#F2E000', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                style={{ width:'34px', height:'34px', borderRadius:'50%', background:'#FFFF00', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
                 <svg width="11" height="11" viewBox="0 0 10 12"><polygon points="0,0 10,6 0,12" fill="#111"/></svg>
               </button>
             )}
@@ -530,7 +530,7 @@ export default function DashboardPage() {
             {timerState === 'running' && (
               <>
                 <button onClick={pauseTimer} title="Pause"
-                  style={{ width:'34px', height:'34px', borderRadius:'50%', background:'#F2E000', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  style={{ width:'34px', height:'34px', borderRadius:'50%', background:'#FFFF00', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
                   <svg width="12" height="12" viewBox="0 0 12 12"><rect x="1" y="0" width="3.5" height="12" fill="#111"/><rect x="7.5" y="0" width="3.5" height="12" fill="#111"/></svg>
                 </button>
                 <button onClick={stopTimer} title="Arrêter et sauvegarder"
@@ -543,7 +543,7 @@ export default function DashboardPage() {
             {timerState === 'paused' && (
               <>
                 <button onClick={startTimer} title="Reprendre"
-                  style={{ width:'34px', height:'34px', borderRadius:'50%', background:'#F2E000', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  style={{ width:'34px', height:'34px', borderRadius:'50%', background:'#FFFF00', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
                   <svg width="11" height="11" viewBox="0 0 10 12"><polygon points="0,0 10,6 0,12" fill="#111"/></svg>
                 </button>
                 <button onClick={stopTimer} title="Arrêter et sauvegarder"
@@ -633,7 +633,7 @@ export default function DashboardPage() {
                 </div>
                 <div style={{ display:'flex', gap:'8px', justifyContent:'flex-end' }}>
                   <button onClick={() => setShowManual(false)} style={{ padding:'7px 14px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', background:'none', cursor:'pointer' }}>Annuler</button>
-                  <button onClick={saveManual} style={{ padding:'7px 16px', fontSize:'13px', background:'#F2E000', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>Ajouter</button>
+                  <button onClick={saveManual} style={{ padding:'7px 16px', fontSize:'13px', background:'#FFFF00', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>Ajouter</button>
                 </div>
               </div>
             )}
@@ -696,7 +696,7 @@ export default function DashboardPage() {
                 Annuler
               </button>
               <button onClick={saveEditedEntry}
-                style={{ padding:'7px 16px', fontSize:'13px', background:'#F2E000', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>
+                style={{ padding:'7px 16px', fontSize:'13px', background:'#FFFF00', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>
                 Enregistrer
               </button>
             </div>

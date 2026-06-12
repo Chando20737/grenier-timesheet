@@ -4,18 +4,18 @@ import { supabase } from '@/lib/supabase'
 
 const Logo = () => (
   <svg viewBox="0 0 100 100" width="32" height="32">
-    <rect width="100" height="100" rx="18" fill="#F2E000"/>
+    <rect width="100" height="100" rx="18" fill="#FFFF00"/>
     <rect x="12" y="12" width="20" height="76" rx="10" fill="#111"/>
     <rect x="38" y="12" width="46" height="14" rx="6" fill="#111"/>
     <rect x="54" y="34" width="30" height="13" rx="4" fill="#111"/>
     <rect x="12" y="74" width="72" height="14" rx="6" fill="#111"/>
     <rect x="30" y="50" width="16" height="30" rx="6" fill="#111"/>
-    <rect x="18" y="18" width="10" height="62" fill="#F2E000"/>
-    <rect x="18" y="18" width="66" height="10" fill="#F2E000"/>
-    <rect x="18" y="76" width="66" height="6" fill="#F2E000"/>
-    <rect x="60" y="36" width="20" height="9" fill="#F2E000"/>
-    <rect x="36" y="52" width="10" height="26" fill="#F2E000"/>
-    <rect x="38" y="52" width="40" height="20" fill="#F2E000"/>
+    <rect x="18" y="18" width="10" height="62" fill="#FFFF00"/>
+    <rect x="18" y="18" width="66" height="10" fill="#FFFF00"/>
+    <rect x="18" y="76" width="66" height="6" fill="#FFFF00"/>
+    <rect x="60" y="36" width="20" height="9" fill="#FFFF00"/>
+    <rect x="36" y="52" width="10" height="26" fill="#FFFF00"/>
+    <rect x="38" y="52" width="40" height="20" fill="#FFFF00"/>
   </svg>
 )
 
@@ -43,14 +43,14 @@ export default function Sidebar({ userInitials }: { userInitials: string }) {
         const active = pathname.startsWith(item.href)
         return (
           <div key={item.href} title={item.title} onClick={() => router.push(item.href)}
-            style={{ width:'36px', height:'36px', borderRadius:'8px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', background: active ? '#F2E000' : 'transparent', color: active ? '#111' : 'rgba(255,255,255,0.6)', transition:'all 0.15s' }}>
+            style={{ width:'36px', height:'36px', borderRadius:'8px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', background: active ? '#FFFF00' : 'transparent', color: active ? '#111' : 'rgba(255,255,255,0.6)', transition:'all 0.15s' }}>
             {item.icon}
           </div>
         )
       })}
       <div style={{ flex:1 }} />
       <div onClick={logout} title="Déconnexion"
-        style={{ width:'30px', height:'30px', borderRadius:'50%', background:'#F2E000', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'11px', fontWeight:'500', color:'#111', cursor:'pointer' }}>
+        style={{ width:'30px', height:'30px', borderRadius:'50%', background:'#FFFF00', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'11px', fontWeight:'500', color:'#111', cursor:'pointer' }}>
         {userInitials}
       </div>
     </div>

@@ -64,9 +64,9 @@ export async function sendDailyReport() {
 
   const html = `
     <div style="font-family:'DM Sans',Arial,sans-serif;max-width:680px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #eee">
-      <div style="background:#F2E000;padding:20px 24px;display:flex;align-items:center;gap:12px">
+      <div style="background:#FFFF00;padding:20px 24px;display:flex;align-items:center;gap:12px">
         <div style="width:36px;height:36px;background:#111;border-radius:8px;display:flex;align-items:center;justify-content:center">
-          <span style="color:#F2E000;font-size:18px;font-weight:700">G</span>
+          <span style="color:#FFFF00;font-size:18px;font-weight:700">G</span>
         </div>
         <div>
           <div style="font-size:16px;font-weight:600;color:#111">Grenier — Rapport journalier</div>

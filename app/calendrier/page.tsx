@@ -814,12 +814,12 @@ export default function CalendrierPage() {
       <div style={{ width:'200px', background:'#111', display:'flex', flexDirection:'column', padding:'16px 0', flexShrink:0 }}>
         <div style={{ display:'flex', alignItems:'center', gap:'10px', padding:'0 16px', marginBottom:'24px', cursor:'pointer' }} onClick={() => window.location.href='/dashboard'}>
           <img src="/Grenier_Symbole_RGB.png" alt="Grenier" style={{ width:'32px', height:'32px', objectFit:'contain' }} />
-          <span style={{ color:'#F2E000', fontSize:'16px', fontWeight:'500' }}>Grenier</span>
+          <span style={{ color:'#FFFF00', fontSize:'16px', fontWeight:'500' }}>Grenier</span>
         </div>
         <div style={{ display:'flex', flexDirection:'column', gap:'2px', padding:'0 8px' }}>
           {navItems.map(item => (
             <div key={item.href} onClick={() => window.location.href=item.href}
-              style={{ display:'flex', alignItems:'center', gap:'10px', padding:'9px 10px', borderRadius:'8px', cursor:'pointer', background: item.active ? '#F2E000' : 'transparent', color: item.active ? '#111' : 'rgba(255,255,255,0.6)' }}
+              style={{ display:'flex', alignItems:'center', gap:'10px', padding:'9px 10px', borderRadius:'8px', cursor:'pointer', background: item.active ? '#FFFF00' : 'transparent', color: item.active ? '#111' : 'rgba(255,255,255,0.6)' }}
               onMouseEnter={e => { if (!item.active) (e.currentTarget as HTMLElement).style.background='rgba(255,255,255,0.08)' }}
               onMouseLeave={e => { if (!item.active) (e.currentTarget as HTMLElement).style.background='transparent' }}>
               {item.icon}
@@ -833,7 +833,7 @@ export default function CalendrierPage() {
             style={{ display:'flex', alignItems:'center', gap:'10px', padding:'9px 10px', borderRadius:'8px', cursor:'pointer', color:'rgba(255,255,255,0.5)' }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.background='rgba(255,255,255,0.08)'}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.background='transparent'}>
-            <div style={{ width:'26px', height:'26px', borderRadius:'50%', background:'#F2E000', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'10px', fontWeight:'500', color:'#111' }}>{initials}</div>
+            <div style={{ width:'26px', height:'26px', borderRadius:'50%', background:'#FFFF00', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'10px', fontWeight:'500', color:'#111' }}>{initials}</div>
             <span style={{ fontSize:'12px' }}>Déconnexion</span>
           </div>
         </div>
@@ -841,7 +841,7 @@ export default function CalendrierPage() {
 
       <div style={{ flex:1, display:'flex', flexDirection:'column', minHeight:'100vh', minWidth:0 }}>
         <div style={{ background:'#111', padding:'10px 1rem', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0, gap:'12px' }}>
-          <h1 style={{ fontSize:'15px', fontWeight:'500', color:'#F2E000' }}>Mon calendrier</h1>
+          <h1 style={{ fontSize:'15px', fontWeight:'500', color:'#FFFF00' }}>Mon calendrier</h1>
 
           {!googleConnected ? (
             <button onClick={connectGoogle}
@@ -870,7 +870,7 @@ export default function CalendrierPage() {
           <div style={{ display:'flex', alignItems:'center', gap:'8px', flexShrink:0 }}>
             <button onClick={navigatePrev}
               title="5 jours précédents"
-              style={{ background:'#F2E000', border:'none', borderRadius:'6px', width:'28px', height:'28px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+              style={{ background:'#FFFF00', border:'none', borderRadius:'6px', width:'28px', height:'28px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="#111" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </button>
             <button onClick={navigateToday}
@@ -879,7 +879,7 @@ export default function CalendrierPage() {
             </button>
             <button onClick={navigateNext}
               title="5 jours suivants"
-              style={{ background:'#F2E000', border:'none', borderRadius:'6px', width:'28px', height:'28px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+              style={{ background:'#FFFF00', border:'none', borderRadius:'6px', width:'28px', height:'28px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 18l6-6-6-6" stroke="#111" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </button>
           </div>
@@ -961,7 +961,7 @@ export default function CalendrierPage() {
                                   Annuler
                                 </button>
                                 <button onClick={() => createTaskInDate(ds)}
-                                  style={{ fontSize:'11px', padding:'4px 10px', background:'#F2E000', border:'none', borderRadius:'4px', fontWeight:'500', cursor:'pointer' }}>
+                                  style={{ fontSize:'11px', padding:'4px 10px', background:'#FFFF00', border:'none', borderRadius:'4px', fontWeight:'500', cursor:'pointer' }}>
                                   Ajouter
                                 </button>
                               </div>
@@ -972,7 +972,7 @@ export default function CalendrierPage() {
                         <div onDragOver={e => onColDragOver(e, ds)}
                           onDragLeave={e => onColDragLeave(e, ds)}
                           onDrop={e => onColDrop(e, ds)}
-                          style={{ position:'relative', height: HOURS.length*PPH+'px', background: isOver ? 'rgba(242,224,0,0.04)' : (isWeekend ? '#fafaf6' : 'transparent'), transition:'background 0.1s' }}>
+                          style={{ position:'relative', height: HOURS.length*PPH+'px', background: isOver ? 'rgba(255,255,0,0.04)' : (isWeekend ? '#fafaf6' : 'transparent'), transition:'background 0.1s' }}>
                           {HOURS.map((h,i) => (
                             <div key={h}>
                               <div style={{ position:'absolute', left:0, right:0, top:i*PPH, borderBottom:'0.5px solid rgba(0,0,0,0.06)' }} />
@@ -981,7 +981,7 @@ export default function CalendrierPage() {
                           ))}
 
                           <div id={`week-ghost-${ds}`}
-                            style={{ display:'none', position:'absolute', left:'3px', right:'3px', background:'rgba(242,224,0,0.25)', border:'1.5px dashed #D4B800', borderRadius:'4px', pointerEvents:'none', zIndex:4 }} />
+                            style={{ display:'none', position:'absolute', left:'3px', right:'3px', background:'rgba(255,255,0,0.25)', border:'1.5px dashed #CCCC00', borderRadius:'4px', pointerEvents:'none', zIndex:4 }} />
 
                           {dayGoogle.map((t, idx) => {
                             const top = (t.timeMin - 6*60) * PPM
@@ -1039,11 +1039,11 @@ export default function CalendrierPage() {
           <div style={{ width:'320px', flexShrink:0, background:'#f9f9f7', display:'flex', flexDirection:'column', borderLeft:'0.5px solid rgba(0,0,0,0.1)' }}>
             <div style={{ display:'flex', background:'white', borderBottom:'0.5px solid rgba(0,0,0,0.08)' }}>
               <button onClick={() => setSidePanel('tasks')}
-                style={{ flex:1, padding:'10px', fontSize:'11px', fontWeight:'500', textTransform:'uppercase', letterSpacing:'0.5px', border:'none', background: sidePanel==='tasks' ? '#f9f9f7' : 'transparent', color: sidePanel==='tasks' ? '#111' : '#888', borderBottom: sidePanel==='tasks' ? '2px solid #F2E000' : '2px solid transparent', cursor:'pointer' }}>
+                style={{ flex:1, padding:'10px', fontSize:'11px', fontWeight:'500', textTransform:'uppercase', letterSpacing:'0.5px', border:'none', background: sidePanel==='tasks' ? '#f9f9f7' : 'transparent', color: sidePanel==='tasks' ? '#111' : '#888', borderBottom: sidePanel==='tasks' ? '2px solid #FFFF00' : '2px solid transparent', cursor:'pointer' }}>
                 Tâches ({unplanned.length})
               </button>
               <button onClick={() => setSidePanel('gmail')}
-                style={{ flex:1, padding:'10px', fontSize:'11px', fontWeight:'500', textTransform:'uppercase', letterSpacing:'0.5px', border:'none', background: sidePanel==='gmail' ? '#f9f9f7' : 'transparent', color: sidePanel==='gmail' ? '#111' : '#888', borderBottom: sidePanel==='gmail' ? '2px solid #F2E000' : '2px solid transparent', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'6px' }}>
+                style={{ flex:1, padding:'10px', fontSize:'11px', fontWeight:'500', textTransform:'uppercase', letterSpacing:'0.5px', border:'none', background: sidePanel==='gmail' ? '#f9f9f7' : 'transparent', color: sidePanel==='gmail' ? '#111' : '#888', borderBottom: sidePanel==='gmail' ? '2px solid #FFFF00' : '2px solid transparent', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'6px' }}>
                 Inbox Gmail
                 {sidePanel === 'gmail' && (
                   <span onClick={(e) => { e.stopPropagation(); user && loadGmail(user.id) }}
@@ -1160,7 +1160,7 @@ export default function CalendrierPage() {
                 Annuler
               </button>
               <button onClick={createTaskFromEmail}
-                style={{ padding:'8px 18px', fontSize:'13px', background:'#F2E000', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>
+                style={{ padding:'8px 18px', fontSize:'13px', background:'#FFFF00', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>
                 Créer la tâche
               </button>
             </div>
@@ -1226,7 +1226,7 @@ export default function CalendrierPage() {
                     Annuler
                   </button>
                   <button onClick={createCategory}
-                    style={{ fontSize:'11px', padding:'4px 12px', background:'#F2E000', border:'none', borderRadius:'6px', fontWeight:'500', cursor:'pointer' }}>
+                    style={{ fontSize:'11px', padding:'4px 12px', background:'#FFFF00', border:'none', borderRadius:'6px', fontWeight:'500', cursor:'pointer' }}>
                     Créer
                   </button>
                 </div>
@@ -1307,7 +1307,7 @@ export default function CalendrierPage() {
                   title="Durée en minutes (optionnel)"
                   style={{ width:'56px', padding:'6px 8px', fontSize:'12px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', outline:'none', textAlign:'center' }} />
                 <button onClick={addSubtask}
-                  style={{ padding:'6px 12px', fontSize:'12px', background:'#F2E000', border:'none', borderRadius:'6px', fontWeight:'500', cursor:'pointer' }}>
+                  style={{ padding:'6px 12px', fontSize:'12px', background:'#FFFF00', border:'none', borderRadius:'6px', fontWeight:'500', cursor:'pointer' }}>
                   +
                 </button>
               </div>
@@ -1332,7 +1332,7 @@ export default function CalendrierPage() {
                   Annuler
                 </button>
                 <button onClick={saveEditedTask}
-                  style={{ padding:'7px 16px', fontSize:'13px', background:'#F2E000', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>
+                  style={{ padding:'7px 16px', fontSize:'13px', background:'#FFFF00', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>
                   Enregistrer
                 </button>
               </div>
@@ -1442,7 +1442,7 @@ export default function CalendrierPage() {
                 </a>
               ) : <span />}
               <button onClick={() => setEventDetails(null)}
-                style={{ padding:'7px 16px', fontSize:'13px', background:'#F2E000', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>
+                style={{ padding:'7px 16px', fontSize:'13px', background:'#FFFF00', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>
                 Fermer
               </button>
             </div>
@@ -1451,7 +1451,7 @@ export default function CalendrierPage() {
       )}
 
       {tooltip && (
-        <div style={{ position:'fixed', left:tooltip.x, top:tooltip.y, background:'#111', color:'#F2E000', fontSize:'11px', padding:'3px 7px', borderRadius:'4px', pointerEvents:'none', zIndex:100 }}>
+        <div style={{ position:'fixed', left:tooltip.x, top:tooltip.y, background:'#111', color:'#FFFF00', fontSize:'11px', padding:'3px 7px', borderRadius:'4px', pointerEvents:'none', zIndex:100 }}>
           {tooltip.text}
         </div>
       )}

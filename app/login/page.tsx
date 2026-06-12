@@ -190,7 +190,7 @@ export default function LoginPage() {
         )}
 
         <button onClick={submit} disabled={loading}
-          style={{ width:'100%', padding:'10px', background:'#F2E000', border:'none', borderRadius:'8px', fontSize:'13px', fontWeight:'500', cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.6 : 1 }}>
+          style={{ width:'100%', padding:'10px', background:'#FFFF00', border:'none', borderRadius:'8px', fontSize:'13px', fontWeight:'500', cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.6 : 1 }}>
           {loading
             ? (mode === 'login' ? 'Connexion…' : 'Création du compte…')
             : (mode === 'login' ? 'Se connecter' : 'Créer mon compte')}

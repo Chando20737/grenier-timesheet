@@ -3,8 +3,8 @@
 @tailwind utilities;
 
 :root {
-  --yellow: #F2E000;
-  --yellow-dark: #d4c400;
+  --yellow: #FFFF00;
+  --yellow-dark: #E0E000;
   --black: #111111;
   --sidebar-w: 52px;
 }
@@ -85,7 +85,7 @@ input, select, textarea, button {
   outline: none;
   transition: border-color 0.15s;
 }
-.form-input:focus { border-color: var(--yellow-dark); box-shadow: 0 0 0 3px rgba(212,196,0,0.15); }
+.form-input:focus { border-color: var(--yellow-dark); box-shadow: 0 0 0 3px rgba(224,224,0,0.15); }
 
 .label {
   display: block;
