@@ -153,7 +153,7 @@ export default function DashboardPage() {
     activeTaskIdRef.current = (running || paused) && selectedTask?.id ? selectedTask.id : null
   }, [running, paused, selectedTask])
 
-  // Roulement à la minute des tâches normales en retard (hook partagé avec le calendrier)
+  // Roulement (pas de 15 min) des tâches normales en retard (hook partagé avec le calendrier)
   useRollOverdueTasks({
     userId: user?.id,
     onRolled: () => { if (user) loadTasks(user.id) },

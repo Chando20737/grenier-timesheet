@@ -92,7 +92,7 @@ export default function CalendrierPage() {
   const [loading, setLoading] = useState(true)
   // Notifications « tâche due à l'heure prévue » (hook partagé, onglet ouvert seulement)
   const { notifPerm, enableNotifications, dueToast, dismissToast } = useDueTaskNotifications(user?.id)
-  // Roulement à la minute des tâches normales en retard (hook partagé avec le dashboard).
+  // Roulement (pas de 15 min) des tâches normales en retard (hook partagé avec le dashboard).
   // Aucun timer ici, donc aucune tâche active à exclure.
   useRollOverdueTasks({
     userId: user?.id,
