@@ -11,22 +11,32 @@ import { supabase } from './supabase'
 // quotidien /api/cron/roll-tasks.
 //
 // onRolled : appelé seulement si des tâches ont bougé, pour recharger l'affichage.
-// getActiveTaskId : optionnel — id d'une tâche à NE PAS repousser (ex. en cours de
-// chronométrage sur le dashboard).
 export function useRollOverdueTasks(opts: {
   userId: string | undefined
   onRolled: () => void
-  getActiveTaskId?: () => string | null
 }) {
   const onRolledRef = useRef(opts.onRolled)
-  const getActiveRef = useRef(opts.getActiveTaskId)
   onRolledRef.current = opts.onRolled
-  getActiveRef.current = opts.getActiveTaskId
 
   const userId = opts.userId
   useEffect(() => {
     if (!userId) return
     let cancelled = false
+
+    // Id de la tâche en cours de chronométrage (ou en pause), lu depuis l'état du
+    // chrono que le dashboard persiste dans localStorage. Comme localStorage est
+    // partagé entre tous les onglets/pages de l'origine, le calendrier aussi évite
+    // ainsi de repousser la tâche qu'on est en train de faire.
+    function activeTimedTaskId(): string | null {
+      try {
+        const raw = localStorage.getItem('grenier-timer')
+        if (!raw) return null
+        const s = JSON.parse(raw)
+        if (s.userId !== userId) return null
+        if (!(s.running || s.paused)) return null
+        return s.selectedTask?.id ?? null
+      } catch { return null }
+    }
 
     async function roll() {
       // Tranche de 15 min courante : la tâche avance par pas de 15 min, sur des
@@ -40,7 +50,8 @@ export function useRollOverdueTasks(opts: {
         .is('recurrence', null)
         .not('scheduled_at', 'is', null)
         .lt('scheduled_at', slotIso)
-      const activeId = getActiveRef.current?.() ?? null
+      // Ne pas repousser la tâche qu'on est en train de chronométrer (sur n'importe quelle page)
+      const activeId = activeTimedTaskId()
       if (activeId) query = query.neq('id', activeId)
       const { data: bumped } = await query.select('id')
       if (cancelled) return

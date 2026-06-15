@@ -52,8 +52,6 @@ export default function DashboardPage() {
   const [monthTotal, setMonthTotal] = useState(0)
   const interval = useRef<any>(null)
   const taskWrapRef = useRef<HTMLDivElement>(null)
-  // Tâche en cours de chronométrage : on ne la repousse pas (on est en train de la faire)
-  const activeTaskIdRef = useRef<string | null>(null)
   // Notifications « tâche due à l'heure prévue » (hook partagé, onglet ouvert seulement)
   const { notifPerm, enableNotifications, dueToast, dismissToast } = useDueTaskNotifications(user?.id)
 
@@ -147,17 +145,11 @@ export default function DashboardPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Garde à jour l'id de la tâche actuellement chronométrée (en marche ou en pause) :
-  // on ne la repousse pas pendant qu'on travaille dessus.
-  useEffect(() => {
-    activeTaskIdRef.current = (running || paused) && selectedTask?.id ? selectedTask.id : null
-  }, [running, paused, selectedTask])
-
-  // Roulement (pas de 15 min) des tâches normales en retard (hook partagé avec le calendrier)
+  // Roulement (pas de 15 min) des tâches normales en retard (hook partagé avec le calendrier).
+  // La tâche en cours de chronométrage est exclue automatiquement (lue depuis localStorage).
   useRollOverdueTasks({
     userId: user?.id,
     onRolled: () => { if (user) loadTasks(user.id) },
-    getActiveTaskId: () => activeTaskIdRef.current,
   })
 
   async function loadCategories(uid: string) {
