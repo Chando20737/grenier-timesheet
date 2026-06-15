@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useDueTaskNotifications } from '@/lib/useDueTaskNotifications'
+import { useRollOverdueTasks } from '@/lib/useRollOverdueTasks'
 
 const JOURS_LONG = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi']
 const MOIS = ['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc']
@@ -91,6 +92,12 @@ export default function CalendrierPage() {
   const [loading, setLoading] = useState(true)
   // Notifications « tâche due à l'heure prévue » (hook partagé, onglet ouvert seulement)
   const { notifPerm, enableNotifications, dueToast, dismissToast } = useDueTaskNotifications(user?.id)
+  // Roulement à la minute des tâches normales en retard (hook partagé avec le dashboard).
+  // Aucun timer ici, donc aucune tâche active à exclure.
+  useRollOverdueTasks({
+    userId: user?.id,
+    onRolled: () => { if (user) loadBuffer(user.id) },
+  })
   const [refreshing, setRefreshing] = useState(false)
   const [centerDate, setCenterDate] = useState<Date>(() => {
     const d = new Date(); d.setHours(0,0,0,0); return d

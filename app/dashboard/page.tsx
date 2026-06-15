@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useDueTaskNotifications } from '@/lib/useDueTaskNotifications'
+import { useRollOverdueTasks } from '@/lib/useRollOverdueTasks'
 
 const navItems = [
   { href:'/dashboard', label:'Minuterie du jour', active:true, icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="13" r="8" stroke="currentColor" strokeWidth="1.5"/><path d="M12 9v4l2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> },
@@ -146,49 +147,18 @@ export default function DashboardPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Repousse à « maintenant », chaque minute, les tâches normales non terminées
-  // dont l'heure est passée. Elles restent ainsi en haut de la liste jusqu'à ce
-  // qu'on les marque terminées (is_done = true les sort du roulement).
-  // Actif uniquement tant que l'onglet est ouvert. Les tâches récurrentes sont
-  // volontairement exclues (leur scheduled_at sert d'ancre de récurrence) et
-  // demeurent gérées par le cron quotidien /api/cron/roll-tasks.
-  // Garde à jour l'id de la tâche actuellement chronométrée (en marche ou en pause)
+  // Garde à jour l'id de la tâche actuellement chronométrée (en marche ou en pause) :
+  // on ne la repousse pas pendant qu'on travaille dessus.
   useEffect(() => {
     activeTaskIdRef.current = (running || paused) && selectedTask?.id ? selectedTask.id : null
   }, [running, paused, selectedTask])
 
-  useEffect(() => {
-    if (!user) return
-
-    async function rollOverdueTasks() {
-      const now = new Date()
-      now.setSeconds(0, 0)
-      const nowIso = now.toISOString()
-      let query = supabase.from('tasks')
-        .update({ scheduled_at: nowIso })
-        .eq('user_id', user.id)
-        .eq('is_done', false)
-        .is('recurrence', null)
-        .not('scheduled_at', 'is', null)
-        .lt('scheduled_at', nowIso)
-      // Ne pas repousser la tâche qu'on est en train de chronométrer
-      const activeId = activeTaskIdRef.current
-      if (activeId) query = query.neq('id', activeId)
-      const { data: bumped } = await query.select('id')
-      if (bumped && bumped.length > 0) loadTasks(user.id)
-    }
-
-    rollOverdueTasks()
-    const id = setInterval(rollOverdueTasks, 60_000)
-    function onVisible() {
-      if (document.visibilityState === 'visible') rollOverdueTasks()
-    }
-    document.addEventListener('visibilitychange', onVisible)
-    return () => {
-      clearInterval(id)
-      document.removeEventListener('visibilitychange', onVisible)
-    }
-  }, [user])
+  // Roulement à la minute des tâches normales en retard (hook partagé avec le calendrier)
+  useRollOverdueTasks({
+    userId: user?.id,
+    onRolled: () => { if (user) loadTasks(user.id) },
+    getActiveTaskId: () => activeTaskIdRef.current,
+  })
 
   async function loadCategories(uid: string) {
     const { data } = await supabase.from('categories').select('*').or(`user_id.eq.${uid},is_global.eq.true`).order('name')
