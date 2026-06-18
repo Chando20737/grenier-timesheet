@@ -755,9 +755,9 @@ export default function CalendrierPage() {
     loadBuffer(user.id)
   }
 
-  function openAddForm(dateStr: string) {
+  function openAddForm(dateStr: string, time?: string) {
     setShowAddForm(dateStr)
-    setNewTitle(''); setNewTime('09:00'); setNewDur('60')
+    setNewTitle(''); setNewTime(time || '09:00'); setNewDur('60')
     setNewCat(categories[0]?.id || '')
   }
 
@@ -1002,7 +1002,19 @@ export default function CalendrierPage() {
                         <div onDragOver={e => onColDragOver(e, ds)}
                           onDragLeave={e => onColDragLeave(e, ds)}
                           onDrop={e => onColDrop(e, ds)}
-                          style={{ position:'relative', height: HOURS.length*PPH+'px', background: isOver ? 'rgba(255,255,0,0.04)' : (isWeekend ? '#fafaf6' : 'transparent'), transition:'background 0.1s' }}>
+                          onClick={e => {
+                            // Clic dans une plage vide → ouvre le formulaire avec l'heure cliquée.
+                            // On ignore les clics sur une tâche (enfant), seuls ceux sur le fond comptent.
+                            if (e.target !== e.currentTarget) return
+                            const rect = e.currentTarget.getBoundingClientRect()
+                            const minutes = HOURS[0]*60 + (e.clientY - rect.top) // 1px = 1min
+                            const clamped = Math.max(HOURS[0]*60, Math.min(minutes, (HOURS[0]+HOURS.length)*60))
+                            const rounded = Math.round(clamped/15)*15 // arrondi au quart d'heure
+                            const hh = String(Math.floor(rounded/60)).padStart(2,'0')
+                            const mm = String(rounded%60).padStart(2,'0')
+                            openAddForm(ds, `${hh}:${mm}`)
+                          }}
+                          style={{ position:'relative', height: HOURS.length*PPH+'px', cursor:'pointer', background: isOver ? 'rgba(255,255,0,0.04)' : (isWeekend ? '#fafaf6' : 'transparent'), transition:'background 0.1s' }}>
                           {HOURS.map((h,i) => (
                             <div key={h}>
                               <div style={{ position:'absolute', left:0, right:0, top:i*PPH, borderBottom:'0.5px solid rgba(0,0,0,0.06)' }} />
