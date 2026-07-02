@@ -155,7 +155,8 @@ export default function DashboardPage() {
   async function loadCategories(uid: string) {
     const { data } = await supabase.from('categories').select('*').or(`user_id.eq.${uid},is_global.eq.true`).order('name')
     setCategories(data || [])
-    if (data?.length) setCatId(data[0].id)
+    // Pas de catégorie par défaut : évitait de journaliser sous la 1re catégorie
+    // (alphabétique, ex. « Chroniques ») quand aucune tâche n'est sélectionnée.
   }
 
   async function loadTasks(uid: string) {
@@ -230,7 +231,7 @@ export default function DashboardPage() {
 
   function selectTask(task: any) {
     setDescription(task.description)
-    if (task.category?.id) setCatId(task.category.id)
+    setCatId(task.category?.id || task.category_id || '')
     setSelectedTask(task)
     setShowTaskList(false)
   }
