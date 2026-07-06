@@ -1243,7 +1243,7 @@ export default function CalendrierPage() {
         <div onClick={() => setEditTask(null)}
           style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200 }}>
           <div onClick={e => e.stopPropagation()}
-            style={{ background:'white', borderRadius:'12px', padding:'1.25rem', width:'520px', maxWidth:'92vw', maxHeight:'90vh', overflowY:'auto', boxShadow:'0 20px 60px rgba(0,0,0,0.3)' }}>
+            style={{ background:'white', borderRadius:'12px', padding:'1.25rem', width:'640px', maxWidth:'92vw', maxHeight:'90vh', overflowY:'auto', boxShadow:'0 20px 60px rgba(0,0,0,0.3)' }}>
             <h3 style={{ fontSize:'14px', fontWeight:'500', marginBottom:'14px' }}>Modifier la tâche</h3>
 
             <div style={{ marginBottom:'10px' }}>
@@ -1384,7 +1384,7 @@ export default function CalendrierPage() {
               </div>
             </div>
 
-            <div style={{ display:'flex', gap:'8px', justifyContent:'space-between', alignItems:'center' }}>
+            <div style={{ display:'flex', gap:'8px', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', rowGap:'8px' }}>
               <div style={{ display:'flex', gap:'8px' }}>
                 <button onClick={() => deleteTask(editTask.id)}
                   style={{ padding:'7px 14px', fontSize:'12px', border:'0.5px solid #E24B4A', borderRadius:'8px', background:'white', color:'#E24B4A', cursor:'pointer' }}>
