@@ -44,6 +44,7 @@ export function useDueTaskNotifications(userId: string | undefined) {
         .select('id, description')
         .eq('user_id', userId)
         .eq('is_done', false)
+        .eq('is_cancelled', false)
         .is('recurrence', null)
         .not('scheduled_at', 'is', null)
         .lte('scheduled_at', nowIso)

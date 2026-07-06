@@ -54,6 +54,7 @@ export async function GET(req: NextRequest) {
   const { data: lateTasks } = await supabase.from('tasks')
     .select('id, scheduled_at, recurrence, is_done')
     .eq('is_done', false)
+    .eq('is_cancelled', false)
     .is('recurrence', null)
     .lt('scheduled_at', today.toISOString())
     .not('scheduled_at', 'is', null)
@@ -74,6 +75,7 @@ export async function GET(req: NextRequest) {
   const { data: recurringTasks } = await supabase.from('tasks')
     .select('id, user_id, description, scheduled_at, recurrence, estimated_duration, category_id')
     .eq('is_done', false)
+    .eq('is_cancelled', false)
     .not('recurrence', 'is', null)
 
   if (recurringTasks) {

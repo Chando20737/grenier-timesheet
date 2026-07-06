@@ -164,6 +164,7 @@ export default function DashboardPage() {
       .select('*, category:categories(id,name,color)')
       .eq('user_id', uid)
       .eq('is_done', false)
+      .eq('is_cancelled', false)
       .order('scheduled_at', { ascending: true, nullsFirst: false })
 
     if (!allTasks) { setTasks([]); return }

@@ -47,6 +47,7 @@ export function useRollOverdueTasks(opts: {
         .update({ scheduled_at: slotIso })
         .eq('user_id', userId)
         .eq('is_done', false)
+        .eq('is_cancelled', false)
         .is('recurrence', null)
         .not('scheduled_at', 'is', null)
         .lt('scheduled_at', slotIso)

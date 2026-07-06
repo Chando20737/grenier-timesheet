@@ -266,6 +266,7 @@ export default function CalendrierPage() {
     const stillUnplanned: any[] = []
 
     ;(allTasks || []).forEach((t: any) => {
+      if (t.is_cancelled) return // tâche annulée : jamais affichée
       if (!t.scheduled_at) {
         if (!t.recurrence && !t.is_done) stillUnplanned.push(t)
         return
@@ -538,6 +539,19 @@ export default function CalendrierPage() {
   async function deleteTask(taskId: string) {
     if (!confirm('Supprimer définitivement cette tâche ?')) return
     await supabase.from('tasks').delete().eq('id', taskId)
+    setEditTask(null)
+    loadBuffer(user.id)
+  }
+
+  // Annulation douce : la tâche est retirée des vues actives (calendrier, minuterie,
+  // roulement, notifications) mais conservée, et jamais comptée comme complétée.
+  async function cancelTask() {
+    if (!editTask || !user) return
+    const msg = editTask.recurrence
+      ? 'Annuler cette tâche récurrente (toutes ses occurrences) ? Elle ne sera pas comptée comme complétée.'
+      : 'Annuler cette tâche ? Elle sera retirée sans être comptée comme complétée.'
+    if (!confirm(msg)) return
+    await supabase.from('tasks').update({ is_cancelled: true }).eq('id', editTask.id)
     setEditTask(null)
     loadBuffer(user.id)
   }
@@ -1361,6 +1375,11 @@ export default function CalendrierPage() {
                   style={{ padding:'7px 14px', fontSize:'12px', border:'0.5px solid #E24B4A', borderRadius:'8px', background:'white', color:'#E24B4A', cursor:'pointer' }}>
                   Supprimer
                 </button>
+                <button onClick={cancelTask}
+                  title="Retirer la tâche sans la compter comme complétée"
+                  style={{ padding:'7px 14px', fontSize:'12px', border:'0.5px solid #854F0B', borderRadius:'8px', background:'white', color:'#854F0B', cursor:'pointer' }}>
+                  Annuler la tâche
+                </button>
                 <button onClick={startTimerFromTask}
                   title="Démarrer la minuterie pour cette tâche"
                   style={{ padding:'7px 14px', fontSize:'12px', border:'0.5px solid #3B6D11', borderRadius:'8px', background:'white', color:'#3B6D11', cursor:'pointer', display:'flex', alignItems:'center', gap:'5px' }}>
@@ -1371,7 +1390,7 @@ export default function CalendrierPage() {
               <div style={{ display:'flex', gap:'8px' }}>
                 <button onClick={() => setEditTask(null)}
                   style={{ padding:'7px 14px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', background:'white', cursor:'pointer' }}>
-                  Annuler
+                  Fermer
                 </button>
                 <button onClick={saveEditedTask}
                   style={{ padding:'7px 16px', fontSize:'13px', background:'#FFFF00', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>
