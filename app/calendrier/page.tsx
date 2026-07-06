@@ -124,6 +124,8 @@ export default function CalendrierPage() {
 
   const [editTask, setEditTask] = useState<any>(null)
   const [editOccurrenceDate, setEditOccurrenceDate] = useState<string | null>(null)
+  const [icsUrl, setIcsUrl] = useState<string | null>(null)
+  const [icsCopied, setIcsCopied] = useState(false)
   const [editForm, setEditForm] = useState({
     title: '', cat: '', dur: '60', date: '', time: '', recurrence: '',
     notes: '', subtasks: [] as { id: string, text: string, done: boolean, dur?: number }[],
@@ -373,6 +375,17 @@ export default function CalendrierPage() {
     setRefreshing(true)
     await loadBuffer(user.id)
     setTimeout(() => setRefreshing(false), 500)
+  }
+
+  // Récupère (crée au besoin) le lien iCal personnel pour l'abonner dans Google Agenda
+  async function getIcsLink() {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
+    const res = await fetch('/api/calendar/ics-link', {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+    const data = await res.json()
+    if (data.url) { setIcsUrl(data.url); setIcsCopied(false) }
   }
 
   async function toggleTaskDone(task: any, ev?: React.MouseEvent) {
@@ -896,6 +909,13 @@ export default function CalendrierPage() {
         <div style={{ background:'#111', padding:'10px 1rem', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0, gap:'12px' }}>
           <h1 style={{ fontSize:'15px', fontWeight:'500', color:'#FFFF00' }}>Mon calendrier</h1>
 
+          <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+            <button onClick={getIcsLink}
+              title="Obtenir le lien pour voir mes tâches dans Google Agenda"
+              style={{ background:'rgba(255,255,255,0.1)', border:'none', borderRadius:'8px', padding:'6px 12px', fontSize:'12px', fontWeight:'500', cursor:'pointer', color:'white', display:'flex', alignItems:'center', gap:'6px', whiteSpace:'nowrap' }}>
+              🔗 Lien Google Agenda
+            </button>
+
           {!googleConnected ? (
             <button onClick={connectGoogle}
               style={{ background:'white', border:'none', borderRadius:'8px', padding:'6px 12px', fontSize:'12px', fontWeight:'500', cursor:'pointer', color:'#111', display:'flex', alignItems:'center', gap:'6px' }}>
@@ -917,6 +937,7 @@ export default function CalendrierPage() {
               </button>
             </div>
           )}
+          </div>
         </div>
 
         <div style={{ background:'#1a1a1a', borderBottom:'0.5px solid rgba(255,255,255,0.08)', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 12px', flexShrink:0, gap:'12px' }}>
@@ -1233,6 +1254,36 @@ export default function CalendrierPage() {
               <button onClick={createTaskFromEmail}
                 style={{ padding:'8px 18px', fontSize:'13px', background:'#FFFF00', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer' }}>
                 Créer la tâche
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {icsUrl && (
+        <div onClick={() => setIcsUrl(null)}
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:'white', borderRadius:'12px', padding:'1.25rem', width:'560px', maxWidth:'92vw', boxShadow:'0 20px 60px rgba(0,0,0,0.3)' }}>
+            <h3 style={{ fontSize:'14px', fontWeight:'500', marginBottom:'6px' }}>Voir mes tâches dans Google Agenda</h3>
+            <p style={{ fontSize:'12px', color:'#666', marginBottom:'12px', lineHeight:1.5 }}>
+              Copie ce lien, puis dans Google Agenda : <strong>Autres agendas → + → À partir de l'URL</strong>, colle-le et « Ajouter l'agenda ».
+            </p>
+            <div style={{ display:'flex', gap:'8px', marginBottom:'10px' }}>
+              <input readOnly value={icsUrl} onFocus={e => e.currentTarget.select()}
+                style={{ flex:1, minWidth:0, border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', padding:'8px 10px', fontSize:'12px', outline:'none', color:'#333' }} />
+              <button onClick={() => { navigator.clipboard?.writeText(icsUrl); setIcsCopied(true) }}
+                style={{ padding:'8px 14px', fontSize:'12px', background:'#FFFF00', border:'none', borderRadius:'8px', fontWeight:'500', cursor:'pointer', whiteSpace:'nowrap' }}>
+                {icsCopied ? '✓ Copié' : 'Copier'}
+              </button>
+            </div>
+            <p style={{ fontSize:'11px', color:'#999', marginBottom:'14px', lineHeight:1.5 }}>
+              ⚠️ Google rafraîchit les agendas externes lentement (parfois quelques heures). Garde ce lien privé : il donne accès à tes tâches.
+            </p>
+            <div style={{ display:'flex', justifyContent:'flex-end' }}>
+              <button onClick={() => setIcsUrl(null)}
+                style={{ padding:'7px 14px', fontSize:'13px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'8px', background:'white', cursor:'pointer' }}>
+                Fermer
               </button>
             </div>
           </div>
