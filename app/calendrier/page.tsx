@@ -123,6 +123,7 @@ export default function CalendrierPage() {
   const [emailForm, setEmailForm] = useState({ title: '', time: '09:00', dur: '30', cat: '', includeLink: true })
 
   const [editTask, setEditTask] = useState<any>(null)
+  const [editOccurrenceDate, setEditOccurrenceDate] = useState<string | null>(null)
   const [editForm, setEditForm] = useState({
     title: '', cat: '', dur: '60', date: '', time: '', recurrence: '',
     notes: '', subtasks: [] as { id: string, text: string, done: boolean, dur?: number }[],
@@ -283,7 +284,7 @@ export default function CalendrierPage() {
           const dateStr = dateStrs[idx]
           const occKey = `${t.id}_${dateStr}`
           const occ = occMap.get(occKey)
-          if (occ?.is_skipped) return
+          if (occ?.is_skipped || occ?.is_cancelled) return
 
           const arr = newTasksByDate.get(dateStr) || []
           arr.push({
@@ -473,7 +474,7 @@ export default function CalendrierPage() {
     loadBuffer(user.id)
   }
 
-  async function openEditTask(taskId: string) {
+  async function openEditTask(taskId: string, occurrenceDate?: string) {
     const { data: t } = await supabase.from('tasks')
       .select('*, category:categories(id,name,color)')
       .eq('id', taskId).single()
@@ -487,6 +488,7 @@ export default function CalendrierPage() {
     }
 
     setEditTask(t)
+    setEditOccurrenceDate(occurrenceDate || null)
     setEditForm({
       title: t.description || '',
       cat: t.category_id || '',
@@ -552,6 +554,19 @@ export default function CalendrierPage() {
       : 'Annuler cette tâche ? Elle sera retirée sans être comptée comme complétée.'
     if (!confirm(msg)) return
     await supabase.from('tasks').update({ is_cancelled: true }).eq('id', editTask.id)
+    setEditTask(null)
+    loadBuffer(user.id)
+  }
+
+  // Annule UNE seule occurrence d'une tâche récurrente (les autres jours restent).
+  async function cancelOccurrence() {
+    if (!editTask || !user || !editOccurrenceDate) return
+    if (!confirm('Annuler seulement cette occurrence ? Les autres jours ne sont pas touchés.')) return
+    await supabase.from('task_occurrences').upsert({
+      task_id: editTask.id,
+      occurrence_date: editOccurrenceDate,
+      is_cancelled: true,
+    }, { onConflict: 'task_id,occurrence_date' })
     setEditTask(null)
     loadBuffer(user.id)
   }
@@ -1064,7 +1079,7 @@ export default function CalendrierPage() {
                               <div key={`t-${t.id}-${t.occurrenceDate || ''}-${idx}`}
                                 draggable={!t.isRecurring && !isDone}
                                 onDragStart={e => onWeekTaskDragStart(e, t, ds)}
-                                onClick={() => openEditTask(t.id)}
+                                onClick={() => openEditTask(t.id, t.occurrenceDate)}
                                 title="Cliquer pour modifier"
                                 style={{ position:'absolute', left:'3px', right:'3px', top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 5px 3px 22px', overflow:'hidden', zIndex:3, cursor: (t.isRecurring || isDone) ? 'pointer' : 'grab', background: isDone ? '#f0f0f0' : '#EAF3DE', color: isDone ? '#999' : '#27500A', borderLeft:`3px solid ${isDone ? '#bbb' : (t.color || '#3B6D11')}`, opacity: isDone ? 0.7 : 1 }}>
                                 <div onClick={(ev) => toggleTaskDone(t, ev)}
@@ -1125,7 +1140,7 @@ export default function CalendrierPage() {
                         <span>{t.category?.name || '–'}</span>
                         {t.estimated_duration && <span>⏱ {t.estimated_duration}</span>}
                       </div>
-                      <div onClick={ev => { ev.stopPropagation(); openEditTask(t.id) }}
+                      <div onClick={ev => { ev.stopPropagation(); openEditTask(t.id, t.occurrenceDate) }}
                         title="Modifier"
                         style={{ position:'absolute', top:'8px', right:'8px', width:'22px', height:'22px', borderRadius:'50%', background:'#f5f4f0', border:'0.5px solid rgba(0,0,0,0.1)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}
                         onMouseEnter={ev => (ev.currentTarget as HTMLElement).style.background='#FEFDE6'}
@@ -1375,11 +1390,28 @@ export default function CalendrierPage() {
                   style={{ padding:'7px 14px', fontSize:'12px', border:'0.5px solid #E24B4A', borderRadius:'8px', background:'white', color:'#E24B4A', cursor:'pointer' }}>
                   Supprimer
                 </button>
-                <button onClick={cancelTask}
-                  title="Retirer la tâche sans la compter comme complétée"
-                  style={{ padding:'7px 14px', fontSize:'12px', border:'0.5px solid #854F0B', borderRadius:'8px', background:'white', color:'#854F0B', cursor:'pointer' }}>
-                  Annuler la tâche
-                </button>
+                {editTask.recurrence ? (
+                  <>
+                    {editOccurrenceDate && (
+                      <button onClick={cancelOccurrence}
+                        title="Annuler seulement l'occurrence ouverte (les autres jours restent)"
+                        style={{ padding:'7px 14px', fontSize:'12px', border:'0.5px solid #854F0B', borderRadius:'8px', background:'white', color:'#854F0B', cursor:'pointer' }}>
+                        Annuler cette occurrence
+                      </button>
+                    )}
+                    <button onClick={cancelTask}
+                      title="Annuler toute la série récurrente"
+                      style={{ padding:'7px 14px', fontSize:'12px', border:'0.5px solid rgba(0,0,0,0.2)', borderRadius:'8px', background:'white', color:'#777', cursor:'pointer' }}>
+                      Annuler la série
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={cancelTask}
+                    title="Retirer la tâche sans la compter comme complétée"
+                    style={{ padding:'7px 14px', fontSize:'12px', border:'0.5px solid #854F0B', borderRadius:'8px', background:'white', color:'#854F0B', cursor:'pointer' }}>
+                    Annuler la tâche
+                  </button>
+                )}
                 <button onClick={startTimerFromTask}
                   title="Démarrer la minuterie pour cette tâche"
                   style={{ padding:'7px 14px', fontSize:'12px', border:'0.5px solid #3B6D11', borderRadius:'8px', background:'white', color:'#3B6D11', cursor:'pointer', display:'flex', alignItems:'center', gap:'5px' }}>

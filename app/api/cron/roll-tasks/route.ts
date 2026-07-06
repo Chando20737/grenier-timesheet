@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
       const occ = occMap.get(t.id)
 
       // Si déjà marquée terminée ou skipped → on saute
-      if (occ?.is_done || occ?.is_skipped) continue
+      if (occ?.is_done || occ?.is_skipped || occ?.is_cancelled) continue
       // Si déjà repoussée vers une date qui n'est pas hier → on saute
       if (occ?.rolled_to_date && occ.rolled_to_date !== yesterdayStr) continue
 
