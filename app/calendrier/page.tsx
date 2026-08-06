@@ -11,6 +11,44 @@ const PPH = 60, PPM = PPH/60
 const DAY_WIDTH = 220
 const BUFFER_DAYS = 30
 
+// Répartit des blocs qui se chevauchent en sous-colonnes (comme Google Agenda).
+// Retourne, pour chaque index d'entrée, { lane, lanes } : la colonne occupée et
+// le nombre total de colonnes de son groupe de chevauchement.
+function computeLanes(items: { timeMin: number; dur: number }[]): { lane: number; lanes: number }[] {
+  const evs = items.map((it, i) => ({
+    i,
+    start: it.timeMin,
+    end: it.timeMin + Math.max(it.dur || 0, 15),
+  })).sort((a, b) => a.start - b.start || a.end - b.end)
+
+  const result: { lane: number; lanes: number }[] = new Array(items.length)
+
+  function flush(group: typeof evs) {
+    const colEnds: number[] = [] // fin du dernier bloc de chaque colonne
+    const laneOf = new Map<number, number>()
+    for (const ev of group) {
+      let placed = -1
+      for (let c = 0; c < colEnds.length; c++) {
+        if (colEnds[c] <= ev.start) { colEnds[c] = ev.end; placed = c; break }
+      }
+      if (placed === -1) { colEnds.push(ev.end); placed = colEnds.length - 1 }
+      laneOf.set(ev.i, placed)
+    }
+    const lanes = Math.max(1, colEnds.length)
+    for (const ev of group) result[ev.i] = { lane: laneOf.get(ev.i)!, lanes }
+  }
+
+  let cluster: typeof evs = []
+  let clusterEnd = -Infinity
+  for (const ev of evs) {
+    if (cluster.length && ev.start >= clusterEnd) { flush(cluster); cluster = [] }
+    cluster.push(ev)
+    clusterEnd = Math.max(clusterEnd, ev.end)
+  }
+  if (cluster.length) flush(cluster)
+  return result
+}
+
 const RECURRENCES = [
   { value: '', label: 'Aucune' },
   { value: 'daily', label: 'Tous les jours' },
@@ -998,6 +1036,8 @@ export default function CalendrierPage() {
                     const isWeekend = d.getDay() === 0 || d.getDay() === 6
                     const dayTasks = tasksByDate.get(ds) || []
                     const dayGoogle = googleByDate.get(ds) || []
+                    const dayTaskLanes = computeLanes(dayTasks)
+                    const dayGoogleLanes = computeLanes(dayGoogle)
                     const isOver = dragOverDate === ds
                     const isFirst = ds === firstDateStr
 
@@ -1078,11 +1118,12 @@ export default function CalendrierPage() {
                           {dayGoogle.map((t, idx) => {
                             const top = (t.timeMin - 6*60) * PPM
                             const height = Math.max(t.dur * PPM, 20)
+                            const { lane, lanes } = dayGoogleLanes[idx]
                             return (
                               <div key={`g-${t.id}-${idx}`}
                                 onClick={() => setEventDetails(t)}
                                 title="Cliquer pour voir les détails"
-                                style={{ position:'absolute', left:'3px', right:'3px', top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 5px', overflow:'hidden', zIndex:2, background:'#E6F1FB', color:'#0C447C', borderLeft:'3px solid #185FA5', cursor:'pointer' }}>
+                                style={{ position:'absolute', left:`calc(${lane*100/lanes}% + 3px)`, width:`calc(${100/lanes}% - 6px)`, top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 5px', overflow:'hidden', zIndex:2, background:'#E6F1FB', color:'#0C447C', borderLeft:'3px solid #185FA5', cursor:'pointer' }}>
                                 <div style={{ fontSize:'10px', fontWeight:'500', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}</div>
                                 <div style={{ fontSize:'9px', opacity:0.7, marginTop:'1px' }}>{minToStr(t.timeMin)}</div>
                               </div>
@@ -1092,6 +1133,7 @@ export default function CalendrierPage() {
                           {dayTasks.map((t, idx) => {
                             const top = (t.timeMin - 6*60) * PPM
                             const height = Math.max(t.dur * PPM, 20)
+                            const { lane, lanes } = dayTaskLanes[idx]
                             const isDone = t.isDone
                             const hasNotes = t.notes && t.notes.trim().length > 0
                             const subtasksCount = (t.subtasks || []).length
@@ -1102,7 +1144,7 @@ export default function CalendrierPage() {
                                 onDragStart={e => onWeekTaskDragStart(e, t, ds)}
                                 onClick={() => openEditTask(t.id, t.occurrenceDate)}
                                 title="Cliquer pour modifier"
-                                style={{ position:'absolute', left:'3px', right:'3px', top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 5px 3px 22px', overflow:'hidden', zIndex:3, cursor: (t.isRecurring || isDone) ? 'pointer' : 'grab', background: isDone ? '#f0f0f0' : '#EAF3DE', color: isDone ? '#999' : '#27500A', borderLeft:`3px solid ${isDone ? '#bbb' : (t.color || '#3B6D11')}`, opacity: isDone ? 0.7 : 1 }}>
+                                style={{ position:'absolute', left:`calc(${lane*100/lanes}% + 3px)`, width:`calc(${100/lanes}% - 6px)`, top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 5px 3px 22px', overflow:'hidden', zIndex:3, cursor: (t.isRecurring || isDone) ? 'pointer' : 'grab', background: isDone ? '#f0f0f0' : '#EAF3DE', color: isDone ? '#999' : '#27500A', borderLeft:`3px solid ${isDone ? '#bbb' : (t.color || '#3B6D11')}`, opacity: isDone ? 0.7 : 1 }}>
                                 <div onClick={(ev) => toggleTaskDone(t, ev)}
                                   title={isDone ? 'Marquer comme non terminée' : 'Marquer comme terminée'}
                                   style={{ position:'absolute', left:'4px', top:'4px', width:'14px', height:'14px', borderRadius:'50%', border: isDone ? 'none' : '1.5px solid rgba(0,0,0,0.25)', background: isDone ? '#3B6D11' : 'white', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, zIndex:5 }}>
