@@ -164,6 +164,7 @@ export default function CalendrierPage() {
   const [editOccurrenceDate, setEditOccurrenceDate] = useState<string | null>(null)
   const [icsUrl, setIcsUrl] = useState<string | null>(null)
   const [icsCopied, setIcsCopied] = useState(false)
+  const lastRefreshRef = useRef(0)
   const [editForm, setEditForm] = useState({
     title: '', cat: '', dur: '60', date: '', time: '', recurrence: '',
     notes: '', subtasks: [] as { id: string, text: string, done: boolean, dur?: number }[],
@@ -213,6 +214,27 @@ export default function CalendrierPage() {
   useEffect(() => {
     if (!user) return
     loadBuffer(user.id)
+  }, [user, centerDate])
+
+  // Re-télécharge le calendrier (tâches + événements Google) quand on revient sur
+  // l'onglet, pour refléter les changements faits ailleurs — p. ex. un événement
+  // annulé/supprimé dans Google Agenda disparaît alors du calendrier. Throttle à
+  // 30 s pour éviter de surcharger (loadBuffer fait ~30 requêtes).
+  useEffect(() => {
+    if (!user) return
+    function onVisible() {
+      if (document.visibilityState !== 'visible') return
+      const now = Date.now()
+      if (now - lastRefreshRef.current < 30_000) return
+      lastRefreshRef.current = now
+      loadBuffer(user.id)
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
   }, [user, centerDate])
 
   useEffect(() => {
