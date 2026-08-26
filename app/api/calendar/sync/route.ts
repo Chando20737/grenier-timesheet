@@ -101,9 +101,15 @@ export async function GET(req: NextRequest) {
 
   const data = await res.json()
 
-  // Filtre supplémentaire : exclure tout événement marqué "cancelled" par sécurité
+  // Filtres : exclure les événements "cancelled" et ceux que l'utilisateur a REFUSÉS
+  // (responseStatus 'declined' de son propre participant). Comme invité, on ne peut
+  // pas supprimer un événement, seulement le refuser : on le retire donc du calendrier.
   const events = (data.items || [])
     .filter((e: any) => e.status !== 'cancelled')
+    .filter((e: any) => {
+      const self = (e.attendees || []).find((a: any) => a.self)
+      return self?.responseStatus !== 'declined'
+    })
     .map((e: any) => ({
       id: e.id,
       title: e.summary || 'Sans titre',
