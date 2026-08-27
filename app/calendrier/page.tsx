@@ -324,6 +324,16 @@ export default function CalendrierPage() {
       occMap.set(`${o.task_id}_${o.occurrence_date}`, o)
     })
 
+    // Occurrences déplacées individuellement (override_at), regroupées par tâche
+    const overridesByTask = new Map<string, any[]>()
+    ;(occurrences || []).forEach((o: any) => {
+      if (o.override_at && !o.is_skipped && !o.is_cancelled) {
+        const arr = overridesByTask.get(o.task_id) || []
+        arr.push(o)
+        overridesByTask.set(o.task_id, arr)
+      }
+    })
+
     const newTasksByDate = new Map<string, any[]>()
     dateStrs.forEach(ds => newTasksByDate.set(ds, []))
     const stillUnplanned: any[] = []
@@ -347,6 +357,7 @@ export default function CalendrierPage() {
           const occKey = `${t.id}_${dateStr}`
           const occ = occMap.get(occKey)
           if (occ?.is_skipped || occ?.is_cancelled) return
+          if (occ?.override_at) return // occurrence déplacée : affichée à sa nouvelle date/heure
 
           const arr = newTasksByDate.get(dateStr) || []
           arr.push({
@@ -367,6 +378,31 @@ export default function CalendrierPage() {
           })
           newTasksByDate.set(dateStr, arr)
         })
+
+        // Occurrences déplacées individuellement : les afficher à leur date/heure dérogée
+        for (const o of (overridesByTask.get(t.id) || [])) {
+          const ov = new Date(o.override_at)
+          const ovDateStr = ymd(ov)
+          if (!newTasksByDate.has(ovDateStr)) continue // hors de la fenêtre visible
+          const arr = newTasksByDate.get(ovDateStr) || []
+          arr.push({
+            id: t.id,
+            occurrenceDate: o.occurrence_date, // identité d'origine (pour terminer/annuler/redéplacer)
+            isRecurring: true,
+            isDone: !!o.is_done,
+            title: t.description,
+            timeMin: ov.getHours()*60 + ov.getMinutes(),
+            dur: parseDuration(t.estimated_duration),
+            color: t.category?.color || '#3B6D11',
+            category: t.category?.name,
+            scheduled_at: t.scheduled_at,
+            gmail_message_id: t.gmail_message_id,
+            recurrence: t.recurrence,
+            notes: t.notes,
+            subtasks: Array.isArray(t.subtasks) ? t.subtasks : [],
+          })
+          newTasksByDate.set(ovDateStr, arr)
+        }
         return
       }
 
@@ -838,20 +874,25 @@ export default function CalendrierPage() {
     const t = dragWeekTask.current
     if (!t) return
 
-    if (t.isRecurring) {
-      alert('Pour modifier une tâche récurrente, cliquez dessus pour ouvrir le popup.')
-      dragWeekTask.current = null
-      dragWeekFromDate.current = null
-      return
-    }
-
     const colEl = e.currentTarget as HTMLElement
     const rect = colEl.getBoundingClientRect()
     const y = e.clientY - rect.top
     const offsetY = dragWeekFromDate.current !== null ? dragCalOffset.current : 0
     const newTimeMin = getMinFromY(y, offsetY)
 
-    await saveScheduled(t.id, newTimeMin, t.dur, dateStr)
+    if (t.isRecurring) {
+      // Déplacer SEULEMENT cette occurrence : on enregistre une dérogation (override_at)
+      // sur son occurrence_date d'origine ; le reste de la série ne bouge pas.
+      const d = getDateFromStr(dateStr)
+      d.setHours(Math.floor(newTimeMin/60), newTimeMin%60, 0, 0)
+      await supabase.from('task_occurrences').upsert({
+        task_id: t.id,
+        occurrence_date: t.occurrenceDate,
+        override_at: d.toISOString(),
+      }, { onConflict: 'task_id,occurrence_date' })
+    } else {
+      await saveScheduled(t.id, newTimeMin, t.dur, dateStr)
+    }
     dragWeekTask.current = null
     dragWeekFromDate.current = null
     loadBuffer(user.id)
@@ -1162,11 +1203,11 @@ export default function CalendrierPage() {
                             const subtasksDone = (t.subtasks || []).filter((s: any) => s.done).length
                             return (
                               <div key={`t-${t.id}-${t.occurrenceDate || ''}-${idx}`}
-                                draggable={!t.isRecurring && !isDone}
+                                draggable={!isDone}
                                 onDragStart={e => onWeekTaskDragStart(e, t, ds)}
                                 onClick={() => openEditTask(t.id, t.occurrenceDate)}
                                 title="Cliquer pour modifier"
-                                style={{ position:'absolute', left:`calc(${lane*100/lanes}% + 3px)`, width:`calc(${100/lanes}% - 6px)`, top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 5px 3px 22px', overflow:'hidden', zIndex:3, cursor: (t.isRecurring || isDone) ? 'pointer' : 'grab', background: isDone ? '#f0f0f0' : '#EAF3DE', color: isDone ? '#999' : '#27500A', borderLeft:`3px solid ${isDone ? '#bbb' : (t.color || '#3B6D11')}`, opacity: isDone ? 0.7 : 1 }}>
+                                style={{ position:'absolute', left:`calc(${lane*100/lanes}% + 3px)`, width:`calc(${100/lanes}% - 6px)`, top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 5px 3px 22px', overflow:'hidden', zIndex:3, cursor: isDone ? 'pointer' : 'grab', background: isDone ? '#f0f0f0' : '#EAF3DE', color: isDone ? '#999' : '#27500A', borderLeft:`3px solid ${isDone ? '#bbb' : (t.color || '#3B6D11')}`, opacity: isDone ? 0.7 : 1 }}>
                                 <div onClick={(ev) => toggleTaskDone(t, ev)}
                                   title={isDone ? 'Marquer comme non terminée' : 'Marquer comme terminée'}
                                   style={{ position:'absolute', left:'4px', top:'4px', width:'14px', height:'14px', borderRadius:'50%', border: isDone ? 'none' : '1.5px solid rgba(0,0,0,0.25)', background: isDone ? '#3B6D11' : 'white', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, zIndex:5 }}>
