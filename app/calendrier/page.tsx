@@ -299,7 +299,14 @@ export default function CalendrierPage() {
       })
       if (res.status === 401) { setGmailMessages([]); return }
       const data = await res.json()
-      setGmailMessages(data.messages || [])
+      // Masquer les courriels déjà transformés en tâche (non annulée)
+      const { data: taskEmails } = await supabase.from('tasks')
+        .select('gmail_message_id')
+        .eq('user_id', uid)
+        .not('gmail_message_id', 'is', null)
+        .not('is_cancelled', 'is', true)
+      const usedIds = new Set((taskEmails || []).map((t: any) => t.gmail_message_id))
+      setGmailMessages((data.messages || []).filter((m: any) => !usedIds.has(m.id)))
     } catch {
       setGmailMessages([])
     } finally {
@@ -579,6 +586,7 @@ export default function CalendrierPage() {
       source: 'gmail',
       gmail_message_id: message.id,
     })
+    setGmailMessages(prev => prev.filter((m: any) => m.id !== message.id))
     setDropEmailModal(null)
     loadBuffer(user.id)
   }
