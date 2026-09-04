@@ -7,7 +7,6 @@ import { useRollOverdueTasks } from '@/lib/useRollOverdueTasks'
 const JOURS_LONG = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi']
 const MOIS = ['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc']
 const HOURS = Array.from({length:14}, (_,i) => i+6)
-const PPH = 60, PPM = PPH/60
 const DAY_WIDTH = 220
 const BUFFER_DAYS = 30
 
@@ -165,6 +164,13 @@ export default function CalendrierPage() {
   const [icsUrl, setIcsUrl] = useState<string | null>(null)
   const [icsCopied, setIcsCopied] = useState(false)
   const lastRefreshRef = useRef(0)
+  const [pph, setPph] = useState(60) // hauteur d'une heure en px (zoom vertical)
+  const ppm = pph / 60
+  useEffect(() => {
+    const s = Number(localStorage.getItem('grenier-cal-zoom'))
+    if (s >= 40 && s <= 240) setPph(s)
+  }, [])
+  useEffect(() => { localStorage.setItem('grenier-cal-zoom', String(pph)) }, [pph])
   const [editForm, setEditForm] = useState({
     title: '', cat: '', dur: '60', date: '', time: '', recurrence: '',
     notes: '', subtasks: [] as { id: string, text: string, done: boolean, dur?: number }[],
@@ -566,7 +572,7 @@ export default function CalendrierPage() {
       resizingRef.current = false
       if (!moved || !user) return
       const h = Math.max(10, startHeight + (ev.clientY - startClientY))
-      const newDur = Math.max(5, Math.round((h / PPM) / 5) * 5) // minutes, pas de 5
+      const newDur = Math.max(5, Math.round((h / ppm) / 5) * 5) // minutes, pas de 5
       if (t.isRecurring) {
         const d = getDateFromStr(ds)
         d.setHours(Math.floor(t.timeMin / 60), t.timeMin % 60, 0, 0)
@@ -881,7 +887,7 @@ export default function CalendrierPage() {
   }
 
   function getMinFromY(y: number, offsetY = 0) {
-    return Math.max(6*60, Math.min(19*60+55, snap5(6*60 + (y - offsetY) / PPM)))
+    return Math.max(6*60, Math.min(19*60+55, snap5(6*60 + (y - offsetY) / ppm)))
   }
 
   function onWeekTaskDragStart(e: React.DragEvent, task: any, fromDateStr: string) {
@@ -933,8 +939,8 @@ export default function CalendrierPage() {
 
     const ghost = document.getElementById(`week-ghost-${dateStr}`)
     if (ghost) {
-      ghost.style.top = (min - 6*60) * PPM + 'px'
-      ghost.style.height = Math.max(dur * PPM, 10) + 'px'
+      ghost.style.top = (min - 6*60) * ppm + 'px'
+      ghost.style.height = Math.max(dur * ppm, 10) + 'px'
       ghost.style.display = 'block'
     }
   }
@@ -1168,12 +1174,23 @@ export default function CalendrierPage() {
           </div>
         </div>
 
-        <div style={{ display:'flex', gap:'12px', padding:'7px 1rem', background:'white', borderBottom:'0.5px solid rgba(0,0,0,0.08)', flexShrink:0 }}>
-          {[{color:'#3B6D11',label:'Tâche'},{color:'#185FA5',label:'Google Agenda'}].map(l => (
-            <div key={l.label} style={{ display:'flex', alignItems:'center', gap:'5px', fontSize:'11px', color:'#777' }}>
-              <div style={{ width:'8px', height:'8px', borderRadius:'2px', background:l.color }} />{l.label}
-            </div>
-          ))}
+        <div style={{ display:'flex', gap:'12px', padding:'7px 1rem', background:'white', borderBottom:'0.5px solid rgba(0,0,0,0.08)', flexShrink:0, alignItems:'center', justifyContent:'space-between' }}>
+          <div style={{ display:'flex', gap:'12px', alignItems:'center' }}>
+            {[{color:'#3B6D11',label:'Tâche'},{color:'#185FA5',label:'Google Agenda'}].map(l => (
+              <div key={l.label} style={{ display:'flex', alignItems:'center', gap:'5px', fontSize:'11px', color:'#777' }}>
+                <div style={{ width:'8px', height:'8px', borderRadius:'2px', background:l.color }} />{l.label}
+              </div>
+            ))}
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:'4px' }}>
+            <span style={{ fontSize:'12px', color:'#999', marginRight:'2px' }} title="Zoom vertical">🔍</span>
+            <button onClick={() => setPph(p => Math.max(40, p - 30))} title="Réduire (voir plus d'heures)"
+              style={{ width:'24px', height:'24px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', background:'white', cursor:'pointer', fontSize:'14px', lineHeight:1 }}>−</button>
+            <button onClick={() => setPph(60)} title="Réinitialiser le zoom"
+              style={{ minWidth:'46px', height:'24px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', background:'white', cursor:'pointer', fontSize:'11px', color:'#555' }}>{Math.round(pph/60*100)}%</button>
+            <button onClick={() => setPph(p => Math.min(240, p + 30))} title="Agrandir (mieux voir les tâches courtes)"
+              style={{ width:'24px', height:'24px', border:'0.5px solid rgba(0,0,0,0.15)', borderRadius:'6px', background:'white', cursor:'pointer', fontSize:'14px', lineHeight:1 }}>+</button>
+          </div>
         </div>
 
         <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
@@ -1184,7 +1201,7 @@ export default function CalendrierPage() {
                 <div style={{ width:'48px', flexShrink:0, position:'sticky', left:0, background:'white', zIndex:10, borderRight:'0.5px solid rgba(0,0,0,0.08)' }}>
                   <div style={{ height: headerHeight + 'px', borderBottom:'0.5px solid rgba(0,0,0,0.08)', position:'sticky', top:0, background:'white', zIndex:11 }} />
                   {HOURS.map(h => (
-                    <div key={h} style={{ height:`${PPH}px`, borderBottom:'0.5px solid rgba(0,0,0,0.05)', display:'flex', alignItems:'flex-start', justifyContent:'flex-end', padding:'0 6px 0 0', fontSize:'11px', color:'#bbb' }}>
+                    <div key={h} style={{ height:`${pph}px`, borderBottom:'0.5px solid rgba(0,0,0,0.05)', display:'flex', alignItems:'flex-start', justifyContent:'flex-end', padding:'0 6px 0 0', fontSize:'11px', color:'#bbb' }}>
                       {h}:00
                     </div>
                   ))}
@@ -1265,11 +1282,11 @@ export default function CalendrierPage() {
                             const mm = String(rounded%60).padStart(2,'0')
                             openAddForm(ds, `${hh}:${mm}`)
                           }}
-                          style={{ position:'relative', height: HOURS.length*PPH+'px', cursor:'pointer', background: isOver ? 'rgba(255,255,0,0.04)' : (isWeekend ? '#fafaf6' : 'transparent'), transition:'background 0.1s' }}>
+                          style={{ position:'relative', height: HOURS.length*pph+'px', cursor:'pointer', background: isOver ? 'rgba(255,255,0,0.04)' : (isWeekend ? '#fafaf6' : 'transparent'), transition:'background 0.1s' }}>
                           {HOURS.map((h,i) => (
                             <div key={h}>
-                              <div style={{ position:'absolute', left:0, right:0, top:i*PPH, borderBottom:'0.5px solid rgba(0,0,0,0.06)' }} />
-                              <div style={{ position:'absolute', left:0, right:0, top:i*PPH+30, borderBottom:'0.5px dashed rgba(0,0,0,0.04)' }} />
+                              <div style={{ position:'absolute', left:0, right:0, top:i*pph, borderBottom:'0.5px solid rgba(0,0,0,0.06)' }} />
+                              <div style={{ position:'absolute', left:0, right:0, top:i*pph+30, borderBottom:'0.5px dashed rgba(0,0,0,0.04)' }} />
                             </div>
                           ))}
 
@@ -1277,8 +1294,8 @@ export default function CalendrierPage() {
                             style={{ display:'none', position:'absolute', left:'3px', right:'3px', background:'rgba(255,255,0,0.25)', border:'1.5px dashed #CCCC00', borderRadius:'4px', pointerEvents:'none', zIndex:4 }} />
 
                           {dayGoogle.map((t, idx) => {
-                            const top = (t.timeMin - 6*60) * PPM
-                            const height = Math.max(t.dur * PPM, 20)
+                            const top = (t.timeMin - 6*60) * ppm
+                            const height = Math.max(t.dur * ppm, 20)
                             const { lane, lanes } = dayGoogleLanes[idx]
                             return (
                               <div key={`g-${t.id}-${idx}`}
@@ -1292,8 +1309,8 @@ export default function CalendrierPage() {
                           })}
 
                           {dayTasks.map((t, idx) => {
-                            const top = (t.timeMin - 6*60) * PPM
-                            const height = Math.max(t.dur * PPM, 20)
+                            const top = (t.timeMin - 6*60) * ppm
+                            const height = Math.max(t.dur * ppm, 20)
                             const { lane, lanes } = dayTaskLanes[idx]
                             const isDone = t.isDone
                             const hasNotes = t.notes && t.notes.trim().length > 0
