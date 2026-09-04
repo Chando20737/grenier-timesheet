@@ -286,25 +286,27 @@ export default function DashboardPage() {
       const taskName = selectedTask.description.split('\n')[0]
       const shouldMarkDone = confirm(`Marquer la tâche « ${taskName} » comme terminée ?`)
       if (shouldMarkDone) {
+        // Heure de début réelle + durée réelle mesurées par le chrono
+        const realStart = (startTime ? new Date(startTime) : new Date()).toISOString()
+        const realMin = Math.max(1, Math.round(realDuration / 60))
         if (selectedTask.recurrence) {
-          // Tâche récurrente : cocher l'occurrence d'aujourd'hui
+          // Tâche récurrente : cocher l'occurrence d'aujourd'hui et la placer au réel
           const today = new Date()
           const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
           await supabase.from('task_occurrences').upsert({
             task_id: selectedTask.id,
             occurrence_date: todayStr,
             is_done: true,
+            override_at: realStart,
+            override_dur_min: realMin,
           }, { onConflict: 'task_id,occurrence_date' })
         } else {
-          // Tâche normale : marquer is_done = true
-          // Si pas de date, lui en donner une (l'heure de début du chrono) avec la durée mesurée
-          const updates: any = { is_done: true }
-          if (!selectedTask.scheduled_at) {
-            const taskStartTime = startTime ? new Date(startTime) : new Date()
-            updates.scheduled_at = taskStartTime.toISOString()
-            updates.estimated_duration = Math.ceil(realDuration / 60) + ' min'
-          }
-          await supabase.from('tasks').update(updates).eq('id', selectedTask.id)
+          // Tâche normale : marquer terminée ET refléter l'heure/durée réelles dans le calendrier
+          await supabase.from('tasks').update({
+            is_done: true,
+            scheduled_at: realStart,
+            estimated_duration: realMin + ' min',
+          }).eq('id', selectedTask.id)
         }
       }
     }

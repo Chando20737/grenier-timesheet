@@ -399,7 +399,7 @@ export default function CalendrierPage() {
             isDone: !!o.is_done,
             title: t.description,
             timeMin: ov.getHours()*60 + ov.getMinutes(),
-            dur: parseDuration(t.estimated_duration),
+            dur: o.override_dur_min ?? parseDuration(t.estimated_duration),
             color: t.category?.color || '#3B6D11',
             category: t.category?.name,
             scheduled_at: t.scheduled_at,
