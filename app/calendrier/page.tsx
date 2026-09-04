@@ -181,6 +181,7 @@ export default function CalendrierPage() {
   const dragCalOffset = useRef(0)
   const dragWeekTask = useRef<any>(null)
   const dragWeekFromDate = useRef<string|null>(null)
+  const resizingRef = useRef(false)
   const dragEmail = useRef<any>(null)
   const [dragOverDate, setDragOverDate] = useState<string|null>(null)
 
@@ -538,6 +539,50 @@ export default function CalendrierPage() {
       scheduled_at: d.toISOString(),
       estimated_duration: dur+' min'
     }).eq('id', taskId)
+  }
+
+  // Redimensionner une tâche en tirant son bord inférieur : change la durée.
+  // Tâche normale → estimated_duration ; occurrence récurrente → override_dur_min
+  // (seule cette occurrence change, via override_at + override_dur_min).
+  function onResizeStart(e: React.MouseEvent, t: any, ds: string) {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!user) return
+    resizingRef.current = true
+    const blockEl = (e.currentTarget as HTMLElement).parentElement as HTMLElement
+    if (!blockEl) { resizingRef.current = false; return }
+    const startClientY = e.clientY
+    const startHeight = blockEl.offsetHeight
+    let moved = false
+
+    const onMove = (ev: MouseEvent) => {
+      moved = true
+      const h = Math.max(10, startHeight + (ev.clientY - startClientY))
+      blockEl.style.height = h + 'px'
+    }
+    const onUp = async (ev: MouseEvent) => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      resizingRef.current = false
+      if (!moved || !user) return
+      const h = Math.max(10, startHeight + (ev.clientY - startClientY))
+      const newDur = Math.max(5, Math.round((h / PPM) / 5) * 5) // minutes, pas de 5
+      if (t.isRecurring) {
+        const d = getDateFromStr(ds)
+        d.setHours(Math.floor(t.timeMin / 60), t.timeMin % 60, 0, 0)
+        await supabase.from('task_occurrences').upsert({
+          task_id: t.id,
+          occurrence_date: t.occurrenceDate,
+          override_at: d.toISOString(),
+          override_dur_min: newDur,
+        }, { onConflict: 'task_id,occurrence_date' })
+      } else {
+        await supabase.from('tasks').update({ estimated_duration: newDur + ' min' }).eq('id', t.id)
+      }
+      loadBuffer(user.id)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
   }
 
   async function createTaskInDate(dateStr: string) {
@@ -1212,7 +1257,7 @@ export default function CalendrierPage() {
                             return (
                               <div key={`t-${t.id}-${t.occurrenceDate || ''}-${idx}`}
                                 draggable={!isDone}
-                                onDragStart={e => onWeekTaskDragStart(e, t, ds)}
+                                onDragStart={e => { if (resizingRef.current) { e.preventDefault(); return } onWeekTaskDragStart(e, t, ds) }}
                                 onClick={() => openEditTask(t.id, t.occurrenceDate)}
                                 title="Cliquer pour modifier"
                                 style={{ position:'absolute', left:`calc(${lane*100/lanes}% + 3px)`, width:`calc(${100/lanes}% - 6px)`, top:`${top}px`, height:`${height}px`, borderRadius:'4px', padding:'3px 5px 3px 22px', overflow:'hidden', zIndex:3, cursor: isDone ? 'pointer' : 'grab', background: isDone ? '#f0f0f0' : '#EAF3DE', color: isDone ? '#999' : '#27500A', borderLeft:`3px solid ${isDone ? '#bbb' : (t.color || '#3B6D11')}`, opacity: isDone ? 0.7 : 1 }}>
@@ -1229,6 +1274,16 @@ export default function CalendrierPage() {
                                   {hasNotes && <span title="Contient des notes">📝</span>}
                                   {subtasksCount > 0 && <span title={`${subtasksDone} sous-tâche(s) faite(s) sur ${subtasksCount}`}>✅ {subtasksDone}/{subtasksCount}</span>}
                                 </div>
+                                {!isDone && (
+                                  <div
+                                    onMouseDown={e => onResizeStart(e, t, ds)}
+                                    onClick={e => e.stopPropagation()}
+                                    onDragStart={e => e.preventDefault()}
+                                    draggable={false}
+                                    title="Tirer pour changer la durée"
+                                    style={{ position:'absolute', left:0, right:0, bottom:0, height:'8px', cursor:'ns-resize', zIndex:6 }}
+                                  />
+                                )}
                               </div>
                             )
                           })}
