@@ -642,8 +642,31 @@ export default function CalendrierPage() {
       .eq('id', taskId).single()
     if (!t) return
 
+    // Pour une occurrence récurrente, charger ses dérogations d'heure/durée
+    let occ: any = null
+    if (occurrenceDate && t.recurrence) {
+      const { data: o } = await supabase.from('task_occurrences')
+        .select('override_at, override_dur_min')
+        .eq('task_id', taskId).eq('occurrence_date', occurrenceDate).maybeSingle()
+      occ = o
+    }
+
     let dateStr = '', timeStr = ''
-    if (t.scheduled_at) {
+    let durVal = parseDuration(t.estimated_duration)
+    if (occurrenceDate && t.recurrence) {
+      // Heure/durée propres à cette occurrence (dérogation, sinon l'ancre de la série sur ce jour)
+      const base = t.scheduled_at ? new Date(t.scheduled_at) : new Date()
+      let start: Date
+      if (occ?.override_at) {
+        start = new Date(occ.override_at)
+      } else {
+        const [yy, mo, dd] = occurrenceDate.split('-').map(Number)
+        start = new Date(yy, mo - 1, dd, base.getHours(), base.getMinutes(), 0, 0)
+      }
+      dateStr = ymd(start)
+      timeStr = `${String(start.getHours()).padStart(2,'0')}:${String(start.getMinutes()).padStart(2,'0')}`
+      if (occ?.override_dur_min != null) durVal = occ.override_dur_min
+    } else if (t.scheduled_at) {
       const d = new Date(t.scheduled_at)
       dateStr = ymd(d)
       timeStr = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
@@ -654,7 +677,7 @@ export default function CalendrierPage() {
     setEditForm({
       title: t.description || '',
       cat: t.category_id || '',
-      dur: String(parseDuration(t.estimated_duration)),
+      dur: String(durVal),
       date: dateStr,
       time: timeStr,
       recurrence: t.recurrence || '',
@@ -682,19 +705,41 @@ export default function CalendrierPage() {
       scheduledAt = d.toISOString()
     }
 
-    if (editForm.recurrence !== editTask.recurrence) {
+    const recurrenceChanged = editForm.recurrence !== editTask.recurrence
+    if (recurrenceChanged) {
       await supabase.from('task_occurrences').delete().eq('task_id', editTask.id)
     }
 
-    await supabase.from('tasks').update({
-      description: editForm.title.trim(),
-      category_id: editForm.cat || null,
-      estimated_duration: editForm.dur + ' min',
-      scheduled_at: scheduledAt,
-      recurrence: editForm.recurrence || null,
-      notes: editForm.notes || null,
-      subtasks: editForm.subtasks,
-    }).eq('id', editTask.id)
+    const durMin = Math.max(1, parseInt(editForm.dur, 10) || parseDuration(editTask.estimated_duration))
+
+    if (editTask.recurrence && editOccurrenceDate && !recurrenceChanged) {
+      // Édition d'UNE occurrence récurrente : l'heure et la durée vont sur l'occurrence
+      // (dérogation), le contenu reste au niveau de la série.
+      await supabase.from('tasks').update({
+        description: editForm.title.trim(),
+        category_id: editForm.cat || null,
+        recurrence: editForm.recurrence || null,
+        notes: editForm.notes || null,
+        subtasks: editForm.subtasks,
+      }).eq('id', editTask.id)
+
+      await supabase.from('task_occurrences').upsert({
+        task_id: editTask.id,
+        occurrence_date: editOccurrenceDate,
+        override_at: scheduledAt,
+        override_dur_min: durMin,
+      }, { onConflict: 'task_id,occurrence_date' })
+    } else {
+      await supabase.from('tasks').update({
+        description: editForm.title.trim(),
+        category_id: editForm.cat || null,
+        estimated_duration: editForm.dur + ' min',
+        scheduled_at: scheduledAt,
+        recurrence: editForm.recurrence || null,
+        notes: editForm.notes || null,
+        subtasks: editForm.subtasks,
+      }).eq('id', editTask.id)
+    }
 
     setEditTask(null)
     loadBuffer(user.id)
